@@ -1,0 +1,2 @@
+FROM registry.fedoraproject.org/fedora:44
+RUN dnf install -y --setopt=install_weak_deps=False qemu-system-aarch64-core edk2-aarch64 xorriso openssh-clients qemu-img python3 && dnf clean all

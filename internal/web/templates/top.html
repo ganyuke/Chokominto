@@ -1,0 +1,29 @@
+{{define "content"}}
+<h1>{{.Title}}</h1>
+{{template "period-nav" .Period}}
+{{template "filters" .Filters}}
+
+{{if eq .Kind "songs"}}
+{{if .Songs}}{{template "song-table" .Songs}}{{else}}<p>No listens in this period.</p>{{end}}
+{{else if eq .Kind "artists"}}
+{{if .Artists}}
+<div class="table-scroll">
+<table class="table">
+<thead><tr><th scope="col" class="num">#</th><th scope="col" class="thumb"><span class="visually-hidden">Picture</span></th><th scope="col" class="fill">Artist</th>
+{{range .Sorts}}<th scope="col" class="num"{{if .Active}} aria-sort="descending"{{end}}><a href="{{.Href}}">{{if .Active}}<strong>{{.Label}} ▼</strong>{{else}}{{.Label}}{{end}}</a></th>{{end}}
+</tr></thead>
+<tbody>
+{{range .Artists}}<tr><td class="num">{{.Rank}}</td>{{template "thumb" .Art}}<td class="fill">{{template "name" .Artist}}</td><td class="num">{{num .Total}}</td><td class="num">{{num .Credited}}</td><td class="num">{{num .ViaGroups}}</td></tr>
+{{end}}</tbody>
+</table>
+</div>
+{{else}}<p>No listens in this period.</p>{{end}}
+{{else}}
+{{if .Albums}}{{template "album-table" .Albums}}{{else}}<p>No albums in this period.</p>{{end}}
+{{end}}
+
+<nav class="pager" aria-label="Pages">
+<span>{{with .Prev}}<a href="{{.}}" rel="prev">‹ Previous</a>{{end}}</span>
+<span>{{with .Next}}<a href="{{.}}" rel="next">Next ›</a>{{end}}</span>
+</nav>
+{{end}}

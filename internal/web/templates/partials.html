@@ -1,0 +1,90 @@
+{{define "name"}}{{if and .Other otherNames}}<span class="name">{{template "main-name" .}} <span class="other">{{.Other}}</span></span>{{else}}{{template "main-name" .}}{{end}}{{end}}
+
+{{define "main-name"}}{{if .Href}}<a href="{{.Href}}">{{.Name}}</a>{{else}}{{.Name}}{{end}}{{with .Version}} <span class="muted">({{.}})</span>{{end}}{{end}}
+
+{{define "names"}}{{range $i, $n := .}}{{if $i}}, {{end}}{{template "name" $n}}{{end}}{{end}}
+
+{{/* In tables: the first three names, then how many more. */}}
+{{define "names-short"}}{{range $i, $n := .}}{{if lt $i 3}}{{if $i}}, {{end}}{{template "name" $n}}{{end}}{{end}}{{if gt (len .) 3}} <span class="muted">and {{sub (len .) 3}} more</span>{{end}}{{end}}
+
+{{define "listen-song"}}{{if .Linked}}{{template "name" (withVersion .Song .Version)}}{{else}}{{dash .RawTitle}}{{end}}{{end}}
+{{define "listen-artist"}}{{if .Linked}}{{template "names" .Artists}}{{else}}{{dash .RawArtist}}{{end}}{{end}}
+{{define "listen-album"}}{{if .Linked}}{{with .Album}}{{template "name" .}}{{else}}—{{end}}{{else}}{{dash .RawAlbum}}{{end}}{{end}}
+
+{{define "period-nav"}}
+<nav class="tabs" aria-label="Period">
+{{range $i, $t := .Tabs}}{{if $i}}<span class="sep" aria-hidden="true">│</span>{{end}}<a href="{{$t.Href}}"{{if $t.Current}} aria-current="page"{{end}}>{{$t.Label}}</a>{{end}}
+{{if .Prev}}<span class="step"><a href="{{.Prev}}" rel="prev" aria-label="Earlier">‹</a> <strong>{{.Label}}</strong>{{with .Next}} <a href="{{.}}" rel="next" aria-label="Later">›</a>{{end}}</span>{{end}}
+</nav>
+{{if .Custom}}
+<form class="range" method="get">
+<input type="hidden" name="period" value="custom">
+<label>From <input type="date" name="from" value="{{.From}}" required></label>
+<label>To <input type="date" name="to" value="{{.To}}" required></label>
+<button type="submit">Show</button>
+</form>
+{{end}}
+{{end}}
+
+{{define "filters"}}{{if or .Labels .ShowCombine}}
+<form class="filters" method="get">
+<input type="hidden" name="f" value="1">
+{{range $k, $vs := .Hidden}}{{range $vs}}<input type="hidden" name="{{$k}}" value="{{.}}">{{end}}{{end}}
+{{if .ShowCombine}}<label><input type="checkbox" name="combine" value="1"{{if .Combine}} checked{{end}}> Combine versions</label>{{end}}
+{{if .Labels}}<span>Hide:</span>{{range .Labels}} <label><input type="checkbox" name="hide" value="{{.ID}}"{{if .Checked}} checked{{end}}> {{.Name}}</label>{{end}}{{end}}
+<button type="submit">Apply</button>
+</form>
+{{end}}{{end}}
+
+{{define "song-table"}}
+<div class="table-scroll">
+<table class="table">
+<thead><tr><th scope="col" class="num">#</th><th scope="col" class="thumb"><span class="visually-hidden">Picture</span></th><th scope="col" class="wide">Song</th><th scope="col" class="wide">Artist</th><th scope="col" class="num">Listens</th></tr></thead>
+<tbody>
+{{range .}}<tr><td class="num">{{.Rank}}</td>{{template "thumb" .Art}}<td>{{template "name" (withVersion .Song .Version)}}</td><td>{{template "names" .Artists}}</td><td class="num">{{num .Listens}}</td></tr>
+{{end}}</tbody>
+</table>
+</div>
+{{end}}
+
+{{define "artist-table"}}
+<div class="table-scroll">
+<table class="table">
+<thead><tr><th scope="col" class="num">#</th><th scope="col" class="thumb"><span class="visually-hidden">Picture</span></th><th scope="col" class="fill">Artist</th><th scope="col" class="num">Listens</th></tr></thead>
+<tbody>
+{{range .}}<tr><td class="num">{{.Rank}}</td>{{template "thumb" .Art}}<td class="fill">{{template "name" .Artist}}</td><td class="num">{{num .Total}}</td></tr>
+{{end}}</tbody>
+</table>
+</div>
+{{end}}
+
+{{define "album-table"}}
+<div class="table-scroll">
+<table class="table">
+<thead><tr><th scope="col" class="num">#</th><th scope="col" class="thumb"><span class="visually-hidden">Picture</span></th><th scope="col" class="wide">Album</th><th scope="col" class="wide">Artist</th><th scope="col" class="num">Listens</th></tr></thead>
+<tbody>
+{{range .}}<tr><td class="num">{{.Rank}}</td>{{template "thumb" .Art}}<td>{{template "name" .Album}}{{with .Context}} <span class="muted">({{.}})</span>{{end}}</td><td>{{template "names-short" .Artists}}</td><td class="num">{{num .Listens}}</td></tr>
+{{end}}</tbody>
+</table>
+</div>
+{{end}}
+
+{{define "listen-table"}}
+<div class="table-scroll">
+<table class="table">
+{{$fix := and . (index . 0).Fix}}
+<thead><tr><th scope="col" class="time">When</th><th scope="col" class="thumb"><span class="visually-hidden">Picture</span></th><th scope="col" class="wide">Song</th><th scope="col" class="wide">Artist</th><th scope="col" class="album">Album</th>{{if $fix}}<th scope="col" class="action"><span class="muted">Action</span></th>{{end}}</tr></thead>
+<tbody>
+{{range .}}<tr{{if not .Linked}} class="unlinked"{{end}}><td class="time">{{.Date}}, {{.Time}}</td>{{template "thumb" .Art}}<td>{{template "listen-song" .}}</td><td>{{template "listen-artist" .}}</td><td>{{template "listen-album" .}}</td>{{template "fix-cell" .}}</tr>
+{{end}}</tbody>
+</table>
+</div>
+{{end}}
+
+{{define "fix-cell"}}{{with .Fix}}<td class="action fix"><a href="{{.}}">Fix</a></td>{{end}}{{end}}
+
+{{define "thumb"}}<td class="thumb">{{if .}}<img src="{{.}}" alt="" width="32" height="32" loading="lazy">{{else}}<span class="no-art"></span>{{end}}</td>{{end}}
+
+{{define "cover"}}{{with .}}<img class="cover" src="{{.}}" alt="" width="220" height="220">{{else}}<span class="cover no-art"></span>{{end}}{{end}}
+
+{{define "stats"}}{{with .}}<p class="stats">{{range $i, $s := .}}{{if $i}}<span class="sep" aria-hidden="true"> · </span>{{end}}{{if eq $i 0}}<strong>{{$s}}</strong>{{else}}{{$s}}{{end}}{{end}}</p>{{end}}{{end}}

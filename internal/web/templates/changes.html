@@ -1,0 +1,26 @@
+{{define "content"}}
+<h1>Changes</h1>
+{{with .Conflict}}
+<div class="notice notice-danger" role="alert">
+<p>Later changes touched the same things. Undo these first:</p>
+<ul>{{range .}}<li>{{.}}</li>{{end}}</ul>
+</div>
+{{end}}
+{{if .Edits}}
+<div class="table-scroll">
+<table class="table">
+<thead><tr><th scope="col" class="time">When</th><th scope="col" class="fill">Change</th><th scope="col" class="action"><span class="muted">Action</span></th></tr></thead>
+<tbody>
+{{range .Edits}}<tr>
+<td class="time">{{.When}}</td>
+<td class="fill">{{.Summary}}{{with .Agent}} <span class="muted">(by {{.}})</span>{{end}}</td>
+<td class="action">{{if .Undone}}<span class="muted">Undone</span>{{else}}<form class="inline" method="post" action="/changes/{{.ID}}/undo"><button type="submit">Undo</button></form>{{end}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+<nav class="pager" aria-label="Pages"><span>{{with .Newer}}<a href="{{.}}" rel="prev">‹ Newer</a>{{end}}</span><span>{{with .Older}}<a href="{{.}}" rel="next">Older ›</a>{{end}}</span></nav>
+{{else}}
+<p>No changes yet.</p>
+{{end}}
+{{end}}

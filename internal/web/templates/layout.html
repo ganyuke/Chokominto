@@ -1,0 +1,44 @@
+{{define "layout"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{if .Title}}{{.Title}} · {{end}}Chokominto</title>
+<link rel="stylesheet" href="{{static "style.css"}}">
+</head>
+<body>
+<header class="bar">
+<div class="bar-inner">
+<a class="site" href="/">Chokominto</a>
+<nav aria-label="Main">
+<a href="/history"{{if eq .Nav "history"}} aria-current="page"{{end}}>History</a>
+<a href="/top/songs"{{if eq .Nav "songs"}} aria-current="page"{{end}}>Songs</a>
+<a href="/top/artists"{{if eq .Nav "artists"}} aria-current="page"{{end}}>Artists</a>
+<a href="/top/albums"{{if eq .Nav "albums"}} aria-current="page"{{end}}>Albums</a>
+</nav>
+</div>
+<div class="subbar">
+<div class="subbar-inner">
+{{if .User}}
+<nav aria-label="Yours">
+<a href="/scrobble"{{if eq .Nav "scrobble"}} aria-current="page"{{end}}>Scrobble</a>
+<a href="/review"{{if eq .Nav "review"}} aria-current="page"{{end}}>Review</a>
+<a href="/changes"{{if eq .Nav "changes"}} aria-current="page"{{end}}>Changes</a>
+<a href="/settings"{{if eq .Nav "settings"}} aria-current="page"{{end}}>Settings</a>
+</nav>
+<span class="account">{{.User.Name}} <form class="inline" method="post" action="/logout"><button class="link-button" type="submit">Log out</button></form></span>
+{{else if ne .Nav "login"}}
+<span class="account"><a href="/login">Log in</a></span>
+{{end}}
+</div>
+</div>
+</header>
+<main class="page">
+{{if .Notice}}<div class="notice notice-success" role="status">{{.Notice}}{{with .Undo}} <form class="inline" method="post" action="/changes/{{.}}/undo">{{with $.Back}}<input type="hidden" name="back" value="{{.}}">{{end}}<button type="submit">Undo</button></form>{{end}}</div>{{end}}
+{{if .Error}}<p class="notice notice-danger" role="alert">{{.Error}}</p>{{end}}
+{{if .Info}}<p class="notice" role="status">{{.Info}}</p>{{end}}
+{{template "content" .}}
+</main>
+</body>
+</html>
+{{end}}

@@ -1,0 +1,173 @@
+{{define "content"}}
+<h1>Settings</h1>
+
+<h2 id="scrobblers">Scrobblers</h2>
+{{with .NewToken}}
+<div class="notice notice-success" role="status">
+<p>Token for {{.Label}}. Copy it into your scrobbler now. It won't be shown again.</p>
+<code class="secret">{{.Secret}}</code>
+</div>
+{{end}}
+<p>Give each scrobbler its own token, so you can stop one without touching the others.</p>
+<ul class="steps">
+<li><strong>Pano Scrobbler:</strong> add a ListenBrainz account, choose a custom server, enter <code>{{.BaseURL}}/</code> and paste a token.</li>
+<li><strong>Web Scrobbler:</strong> in its ListenBrainz settings, set the API URL to <code>{{.BaseURL}}/1/submit-listens</code> and paste a token. Don't use its love button with this account. Loves always go to listenbrainz.org.</li>
+</ul>
+{{if .Tokens}}
+<div class="table-scroll">
+<table class="table">
+<thead><tr><th scope="col" class="fill">Scrobbler</th><th scope="col">Created</th><th scope="col">Last used</th><th scope="col" class="action"><span class="muted">Action</span></th></tr></thead>
+<tbody>
+{{range .Tokens}}<tr>
+<td class="fill">{{.Label}}</td>
+<td class="time">{{.Created}}</td>
+<td class="time">{{if .Revoked}}<span class="muted">Revoked</span>{{else}}{{dash .LastUsed}}{{end}}</td>
+<td class="action">{{if not .Revoked}}<form class="inline" method="post" action="/settings/tokens/{{.ID}}/revoke"><button class="danger" type="submit">Revoke</button></form>{{end}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+{{end}}
+<form class="form" method="post" action="/settings/tokens">
+<div class="field"><label for="label">New token for</label><input type="text" id="label" name="label" placeholder="Pano Scrobbler on my phone" maxlength="100" required></div>
+<button type="submit">Create token</button>
+</form>
+
+<h2 id="time-zone">Time</h2>
+<form class="form" method="post" action="/settings/time-zone">
+<div class="field"><label for="tz">Time zone</label><input type="text" id="tz" name="time_zone" value="{{.TimeZone}}" list="zones" required>
+<datalist id="zones">{{range .Zones}}<option value="{{.}}">{{end}}</datalist>
+<p class="help">Listens are shown and grouped by day in this time zone. For example Asia/Tokyo or America/New_York.</p></div>
+<div class="field"><label for="week-start">Weeks start on</label>
+<select id="week-start" name="week_start"><option value="1"{{if eq .WeekStart 1}} selected{{end}}>Monday</option><option value="0"{{if eq .WeekStart 0}} selected{{end}}>Sunday</option></select></div>
+<button type="submit">Save</button>
+</form>
+
+<h2 id="labels">Labels</h2>
+<p>Things with a label that's hidden by default are left out of rankings until you untick the label there. Labels are listed in this order everywhere. Put them on artists, songs and albums from their own pages.</p>
+{{if .Labels}}
+{{range .Labels}}<form id="label-{{.ID}}" method="post" action="/settings/labels/{{.ID}}"></form><form id="label-{{.ID}}-delete" method="post" action="/settings/labels/{{.ID}}/delete"></form><form id="label-{{.ID}}-up" method="post" action="/settings/labels/{{.ID}}/move"><input type="hidden" name="by" value="-1"></form><form id="label-{{.ID}}-down" method="post" action="/settings/labels/{{.ID}}/move"><input type="hidden" name="by" value="1"></form>{{end}}
+<div class="table-scroll">
+<table class="table">
+<thead><tr><th scope="col" class="fill">Label</th><th scope="col">Hidden by default</th><th scope="col" class="num">Used on</th><th scope="col">Order</th><th scope="col" class="action"><span class="muted">Action</span></th></tr></thead>
+<tbody>
+{{$last := len .Labels}}
+{{range $i, $l := .Labels}}<tr>
+<td class="fill"><input type="text" name="name" value="{{.Name}}" form="label-{{.ID}}" aria-label="Name of {{.Name}}" required maxlength="60"></td>
+<td><input type="checkbox" name="hide_default" value="1" form="label-{{.ID}}" aria-label="Hide {{.Name}} by default"{{if .HideDefault}} checked{{end}}></td>
+<td class="num">{{num .Uses}}</td>
+<td class="action">{{if $i}}<button type="submit" form="label-{{.ID}}-up">Up</button>{{end}} {{if lt (add $i 1) $last}}<button type="submit" form="label-{{.ID}}-down">Down</button>{{end}}</td>
+<td class="action"><button type="submit" form="label-{{.ID}}">Save</button> <button class="danger" type="submit" form="label-{{.ID}}-delete">Delete</button></td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+{{else}}
+<p>No labels yet.</p>
+{{end}}
+<form class="inline-form" method="post" action="/settings/labels">
+<label class="visually-hidden" for="new-label">New label</label>
+<input type="text" id="new-label" name="name" placeholder="New label, like Vocaloid or Game soundtrack" required maxlength="60">
+<label><input type="checkbox" name="hide_default" value="1"> Hidden by default</label>
+<button type="submit">Create label</button>
+</form>
+
+<h2 id="reading">Reading scrobbles</h2>
+<p>How the text your scrobblers send becomes artists, songs and versions. Listens you linked by hand always stay where they are.</p>
+<form method="get" action="/settings/readings">
+{{range .Readings}}
+<h3>{{.Section}}</h3>
+<div class="table-scroll">
+<table class="table">
+<thead><tr><th scope="col">On</th><th scope="col">Reading</th><th scope="col" class="fill">Example</th></tr></thead>
+<tbody>
+{{range .Readings}}<tr>
+<td><input type="checkbox" id="reading-{{.Key}}" name="on" value="{{.Key}}"{{if .On}} checked{{end}}></td>
+<td><label for="reading-{{.Key}}">{{.Label}}</label></td>
+<td class="fill muted">{{.Example}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+{{end}}
+<p><button type="submit">Save</button></p>
+<p class="help">You'll see examples from your own listens before anything changes.</p>
+</form>
+<h3>Your rules</h3>
+{{if .OwnRules}}
+<div class="table-scroll">
+<table class="table">
+<thead><tr><th scope="col" class="fill">Rule</th><th scope="col" class="num">Listens</th><th scope="col" class="action"><span class="muted">Action</span></th></tr></thead>
+<tbody>
+{{range .OwnRules}}<tr>
+<td class="fill">{{.Text}}{{if not .On}} <span class="muted">(off)</span>{{end}}</td>
+<td class="num">{{num .Listens}}</td>
+<td class="action"><form class="inline" method="post" action="/settings/rules/{{.ID}}">{{if .On}}<button type="submit" name="action" value="off">Turn off</button>{{else}}<button type="submit" name="action" value="on">Turn on</button>{{end}} <button class="danger" type="submit" name="action" value="delete">Delete</button></form></td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+{{else}}
+<p>None yet. After you link a listen on its Fix page, you can have it remembered for similar listens.</p>
+{{end}}
+
+<h2 id="names">Other names</h2>
+<p>Songs, artists and albums can have more than one name, like a romaji and an original-script title. Pages show the main one. You can also show the others, on a line under it.</p>
+<form method="post" action="/settings/names">
+{{if .User.ShowOtherNames}}<input type="hidden" name="on" value="0"><button type="submit">Hide other names</button>
+{{else}}<input type="hidden" name="on" value="1"><button type="submit">Show other names</button>{{end}}
+</form>
+
+<h2 id="pictures">Pictures</h2>
+<p>Album covers and artist pictures are looked for online, on iTunes, Deezer and Cover Art Archive. That sends your album and artist names to them. You can always upload or choose a picture on an album's or artist's page.</p>
+<form method="post" action="/settings/pictures">
+{{if .User.FindArtwork}}<input type="hidden" name="on" value="0"><button type="submit">Stop looking online</button>
+{{else}}<input type="hidden" name="on" value="1"><button type="submit">Look for pictures online</button>{{end}}
+</form>
+{{if .Unused}}<form class="actions" method="post" action="/settings/pictures/clean">
+<p>{{num .Unused}} {{if eq .Unused 1}}picture isn't{{else}}pictures aren't{{end}} shown anywhere anymore ({{.UnusedMB}} MB).</p>
+<button class="danger" type="submit">Remove unused pictures</button>
+</form>{{end}}
+
+<h2 id="agents">AI agents</h2>
+{{with .NewAgent}}
+<div class="notice notice-success" role="status">
+<p>Token for {{.Label}}{{if .CanChange}}, which can change things{{else}}, which can only look{{end}}. Copy it now. It won't be shown again.</p>
+<code class="secret">{{.Secret}}</code>
+<p>For Claude Code, run:</p>
+<code class="secret">{{.Command}}</code>
+<p>Other agents need the address <code>{{$.BaseURL}}/mcp</code> and the header <code>Authorization: Bearer</code> followed by the token.</p>
+</div>
+{{end}}
+<p>An AI agent like Claude can help you tidy up: find every spelling of a song, merge duplicates, name versions and link what isn't linked yet. Give it its own token and the address <code>{{.BaseURL}}/mcp</code>. Everything it changes shows up in Changes, marked with the token's name, and can be undone there.</p>
+{{if .Agents}}
+<div class="table-scroll">
+<table class="table">
+<thead><tr><th scope="col" class="fill">Agent</th><th scope="col">Can</th><th scope="col">Created</th><th scope="col">Last used</th><th scope="col" class="action"><span class="muted">Action</span></th></tr></thead>
+<tbody>
+{{range .Agents}}<tr>
+<td class="fill">{{.Label}}</td>
+<td>{{if .Change}}Look and change{{else}}Look{{end}}</td>
+<td class="time">{{.Created}}</td>
+<td class="time">{{if .Revoked}}<span class="muted">Revoked</span>{{else}}{{dash .LastUsed}}{{end}}</td>
+<td class="action">{{if not .Revoked}}<form class="inline" method="post" action="/settings/agents/{{.ID}}/revoke"><button class="danger" type="submit">Revoke</button></form>{{end}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+{{end}}
+<form class="form" method="post" action="/settings/agents">
+<div class="field"><label for="agent-label">New token for</label><input type="text" id="agent-label" name="label" placeholder="Claude on my laptop" maxlength="100" required></div>
+<div class="field"><label><input type="checkbox" name="change" value="1" checked> Can change things, not just look</label></div>
+<button type="submit">Create token</button>
+</form>
+
+<h2 id="password">Password</h2>
+<form class="form" method="post" action="/settings/password">
+<input type="text" name="username" value="{{.User.Name}}" autocomplete="username" hidden>
+<div class="field"><label for="current">Current password</label><input type="password" id="current" name="current" autocomplete="current-password" required></div>
+<div class="field"><label for="new">New password</label><input type="password" id="new" name="new" autocomplete="new-password" required></div>
+<div class="field"><label for="again">New password again</label><input type="password" id="again" name="again" autocomplete="new-password" required></div>
+<button type="submit">Change password</button>
+</form>
+{{end}}

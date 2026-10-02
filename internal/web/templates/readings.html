@@ -1,0 +1,32 @@
+{{define "content"}}
+<h1>Change how scrobbles are read</h1>
+{{range .Changes}}
+<h2>{{if .On}}Turn on{{else}}Turn off{{end}}: {{.Label}}</h2>
+<p class="muted">{{.Example}}</p>
+{{if .Examples}}
+<p>Some of your listens that would read differently:</p>
+<div class="table-scroll">
+<table class="table">
+<thead><tr><th scope="col" class="wide">Sent</th><th scope="col" class="wide">Now</th><th scope="col" class="wide">After</th><th scope="col" class="num">Listens</th></tr></thead>
+<tbody>
+{{range .Examples}}<tr>
+<td>{{.Artist}} — {{.Title}}</td>
+<td class="muted">{{.Before}}</td>
+<td>{{.After}}</td>
+<td class="num">{{num .Listens}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+{{else if eq .Key "compilation"}}
+<p>This changes albums, so there are no examples here. Check a few soundtracks after saving.</p>
+{{else}}
+<p>None of your listens read differently with this.</p>
+{{end}}
+{{end}}
+<form method="post" action="/settings/readings">
+{{range .On}}<input type="hidden" name="on" value="{{.}}">
+{{end}}<p>Saving reads all your listens again, except the ones you linked by hand. It takes a few minutes, and you can undo it afterwards.</p>
+<button type="submit">Save</button> <a href="/settings#reading">Cancel</a>
+</form>
+{{end}}

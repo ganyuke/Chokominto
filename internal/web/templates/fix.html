@@ -1,0 +1,61 @@
+{{define "content"}}
+<h1>Fix listen</h1>
+
+<h2>Received</h2>
+<table class="table kv">
+<tbody>
+{{range .Received}}<tr><th scope="row">{{.Label}}</th><td>{{dash .Value}}</td></tr>
+{{end}}{{with .PageURL}}<tr><th scope="row">Page</th><td><a href="{{.}}" rel="noreferrer noopener">{{.}}</a></td></tr>{{end}}
+</tbody>
+</table>
+
+<h2>Linked to</h2>
+{{if .Linked}}
+<p>{{template "name" (withVersion .Song .Version)}} — {{template "names" .Artists}}{{with .Album}} — {{template "name" .}}{{end}}</p>
+{{else}}
+<p>Not linked to a song yet.</p>
+{{end}}
+{{if gt .Same 1}}<p class="help">{{num .Same}} listens have exactly this text. Linking one links them all.</p>{{end}}
+
+{{if .Offers}}
+<h2 id="remember">Remember this?</h2>
+<div class="table-scroll">
+<table class="table">
+<tbody>
+{{range .Offers}}<tr><td class="fill">{{.Text}}{{if .Listens}} <span class="muted">(moves {{num .Listens}} more {{if eq .Listens 1}}listen{{else}}listens{{end}})</span>{{end}}</td>
+<td class="action"><form class="inline" method="post" action="{{$.Action}}/remember"><input type="hidden" name="kind" value="{{.Kind}}"><input type="hidden" name="recording" value="{{$.Target}}"><button type="submit">Remember</button></form></td></tr>
+{{end}}</tbody>
+</table>
+</div>
+{{end}}
+
+<h2>Link to another song</h2>
+<form class="search" method="get" action="{{.Action}}/fix" role="search">
+<label for="q">Song, artist or album, in any script</label>
+<div class="search-row"><input type="text" id="q" name="q" value="{{.Query}}"><button type="submit">Search</button></div>
+</form>
+{{if .Results}}
+<form method="post" action="{{.Action}}/link">
+<input type="hidden" name="q" value="{{.Query}}">
+<div class="table-scroll">
+<table class="table">
+<thead><tr><th scope="col" class="wide">Song</th><th scope="col" class="wide">Artist</th><th scope="col" class="num">Listens</th><th scope="col" class="action"><span class="muted">Action</span></th></tr></thead>
+<tbody>
+{{range .Results}}<tr><td>{{template "name" (withVersion .Song .Version)}}</td><td>{{template "names" .Artists}}</td><td class="num">{{num .Listens}}</td><td class="action"><button type="submit" name="recording" value="{{.RecordingID}}">Link</button></td></tr>
+{{end}}</tbody>
+</table>
+</div>
+</form>
+{{else if .Query}}
+<p>Nothing else matches “{{.Query}}”.</p>
+{{end}}
+<form class="actions" method="post" action="{{.Action}}/new-song">
+<button type="submit">New song</button>
+<p class="help">For a song that isn't here yet, or one that was mixed up with another of the same name.</p>
+</form>
+
+<h2>Delete</h2>
+<form method="post" action="{{.Action}}/delete">
+<button class="danger" type="submit">Delete listen</button>
+</form>
+{{end}}

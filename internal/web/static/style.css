@@ -1,0 +1,428 @@
+/* Chokominto stylesheet. Follows docs/style.md. Light only.
+   Every color and size comes from the tokens below. */
+
+:root {
+  --bg:           #ffffff;
+  --bg-alt:       #f4faf8;
+  --bg-head:      #e6f6f1;
+  --bg-hover:     #e8f5f0;
+  --bar:          #a6e3d0;
+  --bar-text:     #3d2418;
+  --heading:      #3d2418;
+  --text:         #202122;
+  --text-muted:   #54595d;
+  --border:       #9ccfc0;
+  --border-light: #d3ece4;
+  --link:         #0b6e63;
+  --link-visited: #5c4033;
+  --danger:       #b32424;
+  --success:      #14866d;
+  --focus:        #0b6e63;
+
+  --font-sans:  system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP",
+                "Hiragino Sans", "Yu Gothic UI", Meiryo, sans-serif;
+  --font-mono:  ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+
+  --text-base:  0.9375rem;
+  --text-table: 0.875rem;
+  --text-small: 0.8125rem;
+  --text-h1:    1.75rem;
+  --text-h2:    1.375rem;
+  --text-h3:    1.0625rem;
+  --leading:    1.5;
+
+  --s1: 4px;  --s2: 8px;  --s3: 12px;  --s4: 16px;  --s5: 24px;  --s6: 32px;
+
+  --radius: 2px;
+  --thumb:  32px;
+  --cover:  220px;
+  --page-max: 1200px;
+
+  color-scheme: light;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--leading);
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* Top bar */
+
+.bar { background: var(--bar); color: var(--bar-text); }
+.bar-inner {
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding: var(--s2) var(--s4);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s2) var(--s5);
+}
+.bar a { color: var(--bar-text); }
+.bar .site { font-weight: 700; font-size: var(--text-h3); }
+.bar nav { display: flex; flex-wrap: wrap; gap: var(--s4); }
+.bar nav a[aria-current="page"] { font-weight: 700; }
+
+/* Second row of the top bar: your own pages, and logging in and out. */
+.subbar {
+  background: var(--bg-head);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-small);
+}
+.subbar-inner {
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding: var(--s1) var(--s4);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s1) var(--s4);
+  min-height: 1.5em;
+}
+.subbar nav { display: flex; flex-wrap: wrap; gap: var(--s4); }
+.subbar a { color: var(--link); }
+.subbar nav a[aria-current="page"] { font-weight: 700; color: var(--text); }
+.subbar .account { margin-left: auto; color: var(--text-muted); }
+.subbar .account .link-button { margin-left: var(--s2); }
+
+/* Page */
+
+.page {
+  flex: 1;
+  width: 100%;
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding: var(--s4) var(--s4) var(--s6);
+}
+
+h1, h2 { font-weight: 700; line-height: 1.25; color: var(--heading); }
+h1 {
+  font-size: var(--text-h1);
+  margin: var(--s2) 0 var(--s4);
+}
+/* Section bands, like MyAnimeList. */
+h2 {
+  font-size: var(--text-h3);
+  margin: var(--s5) 0 var(--s3);
+  padding: var(--s1) var(--s2);
+  background: var(--bg-head);
+  border-bottom: 2px solid var(--border);
+}
+h3 { font-size: var(--text-h3); font-weight: 700; margin: var(--s4) 0 var(--s2); }
+
+/* Date headings in History read as h3 but stay h2 for structure. */
+h2.day {
+  font-size: var(--text-h3);
+  color: var(--text);
+  background: none;
+  border-bottom: 0;
+  margin: var(--s5) 0 var(--s2);
+  padding: 0;
+}
+
+p { margin: 0 0 var(--s3); }
+
+/* Links */
+
+a { color: var(--link); text-decoration: none; }
+a:hover, a:focus-visible { text-decoration: underline; }
+.prose a:visited { color: var(--link-visited); }
+
+/* Focus */
+
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.bar :focus-visible { outline-color: var(--bar-text); }
+
+/* Utilities */
+
+.muted { color: var(--text-muted); }
+.small { font-size: var(--text-small); }
+
+/* Tables */
+
+.table-scroll { overflow-x: auto; margin: 0 0 var(--s4); }
+
+/* Horizontal lines only: between rows, and a stronger one under the
+   header. */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-table);
+}
+.table th, .table td {
+  border-bottom: 1px solid var(--border-light);
+  padding: var(--s1) var(--s2);
+  text-align: left;
+  vertical-align: top;
+}
+.table thead th { background: var(--bg-head); font-weight: 700; border-bottom: 2px solid var(--border); }
+.table tbody th { background: var(--bg-head); font-weight: 700; }
+.table tbody tr:nth-child(even) { background: var(--bg-alt); }
+.table tbody tr:hover { background: var(--bg-hover); }
+.table .num, .table .time {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.table .time { white-space: nowrap; width: 1%; }
+.table .wide { width: 36%; }
+/* Album names are often long soundtrack titles: give them room. */
+.table .album { width: 24%; }
+.table .muted { color: var(--text-muted); }
+.table .action { width: 1%; white-space: nowrap; }
+.table .fix { font-size: var(--text-small); }
+/* Key/value tables, like the received text on the Fix page. */
+.table.kv { width: auto; max-width: 100%; margin: 0 0 var(--s4); }
+.table.kv th { white-space: nowrap; }
+.table tr.unlinked td:not(.time) { color: var(--text-muted); font-style: italic; }
+
+/* Notices */
+
+.notice {
+  background: var(--bg-alt);
+  border-left: 4px solid var(--border);
+  padding: var(--s2) var(--s3);
+  margin: 0 0 var(--s4);
+}
+.notice-success { border-left-color: var(--success); }
+.notice-danger { border-left-color: var(--danger); }
+
+/* Buttons */
+
+button, .button {
+  font: inherit;
+  font-size: var(--text-base);
+  color: var(--text);
+  background: var(--bg-head);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--s1) var(--s3);
+  cursor: pointer;
+}
+button:hover, a.button:hover { background: var(--bg-hover); }
+a.button { display: inline-block; text-decoration: none; }
+button.danger { color: var(--danger); }
+.table button, .table .button { font-size: var(--text-table); padding: 0 var(--s2); }
+
+/* State-changing actions that read as navigation, like Log out. */
+button.link-button {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--link);
+  font-size: inherit;
+}
+button.link-button:hover { text-decoration: underline; background: none; }
+
+form.inline { display: inline; margin: 0; }
+
+/* Forms */
+
+.form { max-width: 28rem; margin: 0 0 var(--s5); }
+.field { margin: 0 0 var(--s3); }
+.field label { display: block; margin-bottom: var(--s1); font-weight: 700; }
+.field .help, p.help { font-size: var(--text-small); color: var(--text-muted); margin: var(--s1) 0 0; }
+form.actions { margin: var(--s3) 0 var(--s4); }
+input[type="text"], input[type="password"], input[type="datetime-local"], select {
+  font: inherit;
+  width: 100%;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--s1) var(--s2);
+}
+input:focus-visible, select:focus-visible { outline: 2px solid var(--focus); outline-offset: 0; }
+
+/* Code and secrets */
+
+code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--bg-alt);
+  border: 1px solid var(--border-light);
+  padding: 0 var(--s1);
+  overflow-wrap: anywhere;
+}
+.secret { display: block; padding: var(--s2); margin: var(--s2) 0; user-select: all; }
+
+/* Now playing and pager */
+
+.now-playing { margin: 0 0 var(--s4); }
+
+.pager {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s4);
+  margin: var(--s4) 0 0;
+}
+
+/* Setup steps */
+
+.steps { margin: 0 0 var(--s4); padding-left: var(--s5); }
+.steps li { margin-bottom: var(--s2); }
+
+/* Names: the primary name, and when the owner shows them, other names
+   muted on a line under it. A name and its other names are one block, so
+   lists of names stay side by side. In tables the other names are cut
+   off when space runs out, never the primary. */
+
+.name { display: inline-block; vertical-align: top; }
+.other { display: block; color: var(--text-muted); font-size: var(--text-small); }
+.table .other {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.also-known { margin: calc(-1 * var(--s3)) 0 var(--s3); }
+
+/* Period tabs */
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s1) var(--s2);
+  margin: 0 0 var(--s3);
+}
+.tabs a[aria-current="page"] { font-weight: 700; color: var(--text); }
+.tabs .sep { color: var(--border); }
+.tabs .step { margin-left: auto; white-space: nowrap; }
+.tabs .step a { padding: 0 var(--s1); }
+
+/* Ranking filters and custom range */
+
+.filters, .range {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2) var(--s3);
+  margin: 0 0 var(--s3);
+  font-size: var(--text-table);
+}
+.filters label, .range label { white-space: nowrap; }
+.filters button, .range button { font-size: var(--text-table); padding: 0 var(--s2); }
+.range input[type="date"] {
+  font: inherit;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0 var(--s1);
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* Home: three top-10 tables side by side on wide screens */
+
+.columns { display: grid; gap: 0 var(--s5); }
+.columns h3 { margin-top: var(--s2); }
+@media (min-width: 1100px) {
+  .columns { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* Infobox on artist, song and album pages */
+
+.infobox {
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  padding: var(--s2) var(--s3);
+  margin: 0 0 var(--s4);
+  font-size: var(--text-table);
+}
+.infobox table { border-collapse: collapse; width: 100%; }
+.infobox th {
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+  padding: var(--s1) var(--s3) var(--s1) 0;
+}
+.infobox td { padding: var(--s1) 0; }
+/* Content and infobox side by side on wide screens. On narrow ones the
+   infobox comes first. */
+.entity { display: grid; gap: 0 var(--s5); }
+.entity > .infobox { order: -1; }
+.entity > div > h2:first-child { margin-top: 0; }
+@media (min-width: 900px) {
+  .entity { grid-template-columns: minmax(0, 1fr) 18rem; align-items: start; }
+  .entity > .infobox { order: 0; }
+}
+
+/* Search box with its button on the same line */
+
+.search { max-width: 36rem; margin: 0 0 var(--s4); }
+.search label { display: block; font-weight: 700; margin-bottom: var(--s1); }
+.search-row { display: flex; gap: var(--s2); margin: 0 0 var(--s3); }
+.search-row input { flex: 1; }
+input[type="datetime-local"] { max-width: 16rem; }
+
+/* Review */
+
+.bulk-actions { display: flex; flex-wrap: wrap; gap: var(--s2); margin: 0 0 var(--s2); }
+.table .check { width: 1%; text-align: center; }
+ul.choices { list-style: none; margin: 0; padding: 0; }
+ul.choices li + li { margin-top: var(--s1); }
+
+/* Text for screen readers only, like labels of row checkboxes. */
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* Editing on item pages */
+
+/* The title with the Read and Edit tabs on its right. */
+.title-line { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--s2) var(--s4); }
+/* The spacing below is the row's, not the title's, so a long title that
+   pushes the tabs onto a line of their own keeps them clear of the line
+   under it. */
+.title-line { margin-bottom: var(--s4); }
+.title-line h1 { margin-right: auto; margin-bottom: 0; }
+.view-tabs { margin: 0; }
+.inline-form { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin: 0 0 var(--s3); }
+.inline-form input[type="text"] { width: auto; flex: 1 1 12rem; }
+.inline-form select, form.inline select { width: auto; }
+form.inline input[type="text"] { width: auto; }
+ul.plain { list-style: none; padding: 0; margin: 0 0 var(--s3); }
+ul.plain li { margin: 0 0 var(--s1); }
+
+/* Pictures. Missing ones are a plain square, never an icon or text. */
+
+.table .thumb { width: var(--thumb); padding: 2px; }
+.table .thumb img, .table .thumb .no-art {
+  display: block;
+  width: var(--thumb);
+  height: var(--thumb);
+  object-fit: cover;
+  border: 1px solid var(--border-light);
+  background: var(--bg-alt);
+}
+.cover {
+  display: block;
+  width: var(--cover);
+  max-width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border: 1px solid var(--border-light);
+  background: var(--bg-alt);
+  margin: 0 auto var(--s3);
+}
+ul.candidates { list-style: none; padding: 0; margin: 0 0 var(--s3); display: flex; flex-wrap: wrap; gap: var(--s3); }
+ul.candidates li { width: 110px; font-size: var(--text-small); }
+ul.candidates img { display: block; width: 110px; height: 110px; object-fit: cover; border: 1px solid var(--border-light); background: var(--bg-alt); margin-bottom: var(--s1); }
+ul.candidates button { margin-top: var(--s1); }
+.edit .cover { margin-left: 0; }
+
+/* The numbers under an item's name: listens first, in bold. */
+.stats { margin: calc(-1 * var(--s3)) 0 var(--s3); color: var(--text-muted); }
+.stats strong { color: var(--heading); font-size: var(--text-h3); }
+.stats .sep { color: var(--border); }

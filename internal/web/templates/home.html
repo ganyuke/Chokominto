@@ -1,0 +1,28 @@
+{{define "content"}}
+<h1>{{.OwnerName}}’s listening</h1>
+{{with .Playing}}<p class="now-playing"><span class="muted">Now playing:</span> {{dash .Title}} — {{dash .Artist}}</p>{{end}}
+
+<h2>Recent listens</h2>
+{{if .Recent}}
+{{template "listen-table" .Recent}}
+<p><a href="/history">All listens</a></p>
+{{else}}
+<p>No listens yet.{{if .User}} <a href="/settings#scrobblers">Set up a scrobbler</a> to start.{{end}}</p>
+{{end}}
+
+<h2>This week <span class="muted small">{{.Week}}</span></h2>
+<div class="columns">
+<section>
+<h3>Top songs</h3>
+{{if .Songs}}{{template "song-table" .Songs}}<p><a href="/top/songs?{{.WeekQuery}}">More songs</a></p>{{else}}<p>No listens this week.</p>{{end}}
+</section>
+<section>
+<h3>Top artists</h3>
+{{if .Artists}}{{template "artist-table" .Artists}}<p><a href="/top/artists?{{.WeekQuery}}">More artists</a></p>{{else}}<p>No listens this week.</p>{{end}}
+</section>
+<section>
+<h3>Top albums</h3>
+{{if .Albums}}{{template "album-table" .Albums}}<p><a href="/top/albums?{{.WeekQuery}}">More albums</a></p>{{else}}<p>No albums this week.</p>{{end}}
+</section>
+</div>
+{{end}}

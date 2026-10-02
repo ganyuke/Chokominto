@@ -1,0 +1,23 @@
+{{define "content"}}
+<h1>History</h1>
+{{with .Playing}}<p class="now-playing"><span class="muted">Now playing:</span> {{dash .Title}} — {{dash .Artist}}</p>{{end}}
+{{if .Days}}
+{{range .Days}}
+<h2 class="day">{{.Label}}</h2>
+<div class="table-scroll">
+<table class="table">
+<thead><tr><th scope="col" class="time">Time</th><th scope="col" class="thumb"><span class="visually-hidden">Picture</span></th><th scope="col" class="wide">Song</th><th scope="col" class="wide">Artist</th><th scope="col" class="album">Album</th>{{if $.User}}<th scope="col" class="action"><span class="muted">Action</span></th>{{end}}</tr></thead>
+<tbody>
+{{range .Rows}}<tr{{if not .Linked}} class="unlinked"{{end}}><td class="time">{{.Time}}</td>{{template "thumb" .Art}}<td>{{template "listen-song" .}}</td><td>{{template "listen-artist" .}}</td><td>{{template "listen-album" .}}</td>{{template "fix-cell" .}}</tr>
+{{end}}</tbody>
+</table>
+</div>
+{{end}}
+<nav class="pager" aria-label="Pages">
+<span>{{with .Newer}}<a href="{{.}}" rel="prev">‹ Newer</a>{{end}}</span>
+<span>{{with .Older}}<a href="{{.}}" rel="next">Older ›</a>{{end}}</span>
+</nav>
+{{else}}
+<p>No listens yet.{{if .User}} <a href="/settings#scrobblers">Set up a scrobbler</a> to start.{{end}}</p>
+{{end}}
+{{end}}

@@ -1,0 +1,5 @@
+{{define "content"}}
+<div class="title-line"><h1>{{.Name.Name}}</h1>{{template "view-tabs" .Tabs}}</div>
+{{with .Name.Other}}{{if otherNames}}<p class="also-known muted">{{.}}</p>{{end}}{{end}}
+{{template "edit" .Edit}}
+{{end}}

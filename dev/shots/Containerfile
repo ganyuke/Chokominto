@@ -1,0 +1,12 @@
+# The browser image for dev/shots/run.sh: Python, Playwright and the
+# headless Chromium it drives, with the fonts it needs for Japanese.
+#
+#   podman build -t localhost/chokominto-shots dev/shots
+#
+# run.sh builds it on first use. Playwright's --with-deps pulls in the
+# system libraries Chromium needs and fonts with Japanese (IPA Gothic),
+# so kana and kanji render instead of boxes.
+FROM docker.io/library/python:3.13-trixie
+RUN pip install --no-cache-dir playwright==1.55.0 \
+ && playwright install --with-deps chromium-headless-shell
+CMD ["python3"]

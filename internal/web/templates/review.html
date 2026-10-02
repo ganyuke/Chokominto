@@ -1,0 +1,98 @@
+{{define "side"}}{{template "name" (withVersion .Name .Version)}}{{with .Artists}} — {{template "names" .}}{{end}}{{with .Albums}} <span class="muted">on</span> {{template "names" .}}{{end}}{{end}}
+
+{{define "received"}}{{dash .Title}} — {{dash .Artist}}{{with .Album}} <span class="muted">on</span> {{.}}{{end}}{{end}}
+
+{{define "content"}}
+<h1>Review</h1>
+{{if .Empty}}<p>Nothing to review right now.</p>{{end}}
+
+{{if .Suggestions}}
+<h2 id="suggestions">Suggestions <span class="muted">({{num .SuggestionCount}})</span></h2>
+<form method="post" action="/review/suggestions">
+<div class="bulk-actions">
+<button type="submit" name="answer" value="same">Same</button>
+<button type="submit" name="answer" value="version">Same song, different version</button>
+<button type="submit" name="answer" value="different">Different</button>
+</div>
+<div class="table-scroll">
+<table class="table">
+<thead><tr><th scope="col" class="check"><span class="visually-hidden">Pick</span></th><th scope="col">Kind</th><th scope="col" class="wide">One</th><th scope="col" class="wide">Other</th><th scope="col">Why</th><th scope="col" class="num">Listens</th></tr></thead>
+<tbody>
+{{range .Suggestions}}<tr>
+<td class="check"><input type="checkbox" name="suggestion" value="{{.ID}}" aria-label="Pick this pair"></td>
+<td>{{.Kind}}</td><td>{{template "side" .A}}</td><td>{{template "side" .B}}</td><td class="muted">{{.Reason}}</td><td class="num">{{num .Listens}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+</form>
+{{if gt .SuggestionCount (len .Suggestions)}}<p class="help">Showing the {{len .Suggestions}} with the most listens.</p>{{end}}
+{{end}}
+
+{{if .WhichOne}}
+<h2 id="which-one">Which one? <span class="muted">({{num (len .WhichOne)}})</span></h2>
+<div class="table-scroll">
+<table class="table">
+<thead><tr><th scope="col" class="wide">Received</th><th scope="col" class="num">Listens</th><th scope="col" class="wide">Songs it fits</th></tr></thead>
+<tbody>
+{{range $row := .WhichOne}}<tr>
+<td>{{template "received" $row}}</td><td class="num">{{num $row.Listens}}</td>
+<td><ul class="choices">{{range $i, $c := $row.Choices}}<li><form class="inline" method="post" action="/review/link"><input type="hidden" name="s" value="{{$row.SourceID}}"><input type="hidden" name="recording" value="{{index $row.ChoiceID $i}}"><button type="submit">Link</button></form> {{template "side" $c}}</li>{{end}}</ul></td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+{{end}}
+
+<h2 id="text">Received text{{if and .UnlinkedCount (not .TextQuery)}} <span class="muted">({{num .UnlinkedCount}} not linked)</span>{{end}}</h2>
+<p class="help">Check text to link it to one song, like several spellings of the same title.</p>
+<form method="post" action="/review/link">
+<div class="search-row">
+<label class="visually-hidden" for="t">Find received text</label>
+<input type="text" id="t" name="t" value="{{.TextQuery}}" placeholder="Find received text">
+<button type="submit" formmethod="get" formaction="/review#text">Find text</button>
+</div>
+{{if .Texts}}
+<div class="table-scroll">
+<table class="table">
+<thead><tr><th scope="col" class="check"><span class="visually-hidden">Pick</span></th><th scope="col" class="wide">Received</th><th scope="col" class="wide">Linked to</th><th scope="col" class="num">Listens</th><th scope="col" class="action"><span class="muted">Action</span></th></tr></thead>
+<tbody>
+{{range .Texts}}<tr>
+<td class="check"><input type="checkbox" name="s" value="{{.SourceID}}"{{if .Checked}} checked{{end}} aria-label="Pick this text"></td>
+<td>{{template "received" .}}</td><td>{{with .LinkedTo}}{{template "side" .}}{{else}}—{{end}}</td><td class="num">{{num .Listens}}</td><td class="action fix"><a href="{{.Fix}}">Fix</a></td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+<div class="search-row">
+<label class="visually-hidden" for="q">Song to link the checked text to</label>
+<input type="text" id="q" name="q" value="{{.Query}}" placeholder="Song to link the checked text to">
+<button type="submit" formmethod="get" formaction="/review#text">Find song</button>
+</div>
+{{if .Results}}
+<div class="table-scroll">
+<table class="table">
+<thead><tr><th scope="col" class="wide">Song</th><th scope="col" class="wide">Artist</th><th scope="col" class="num">Listens</th><th scope="col" class="action"><span class="muted">Action</span></th></tr></thead>
+<tbody>
+{{range .Results}}<tr><td>{{template "name" (withVersion .Song .Version)}}</td><td>{{template "names" .Artists}}</td><td class="num">{{num .Listens}}</td><td class="action"><button type="submit" name="recording" value="{{.RecordingID}}">Link checked</button></td></tr>
+{{end}}</tbody>
+</table>
+</div>
+{{else if .Query}}<p>No song matches “{{.Query}}”.</p>{{end}}
+{{else if .TextQuery}}<p>No received text matches “{{.TextQuery}}”.</p>
+{{end}}
+</form>
+
+{{if .Incomplete}}
+<h2 id="incomplete">Incomplete <span class="muted">({{num (len .Incomplete)}})</span></h2>
+<p class="help">Listens missing an artist or title, or sent with an unlikely time.</p>
+<div class="table-scroll">
+<table class="table">
+<thead><tr><th scope="col" class="fill">Received</th><th scope="col" class="num">Listens</th><th scope="col" class="action"><span class="muted">Action</span></th></tr></thead>
+<tbody>
+{{range .Incomplete}}<tr><td class="fill">{{template "received" .}}</td><td class="num">{{num .Listens}}</td><td class="action fix"><a href="{{.Fix}}">Fix</a></td></tr>
+{{end}}</tbody>
+</table>
+</div>
+{{end}}
+{{end}}

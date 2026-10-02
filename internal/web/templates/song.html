@@ -1,0 +1,28 @@
+{{define "content"}}
+<div class="title-line"><h1>{{.Name.Name}}</h1>{{template "view-tabs" .Tabs}}</div>
+{{template "stats" .Stats}}
+{{with .Name.Other}}{{if otherNames}}<p class="also-known muted">{{.}}</p>{{end}}{{end}}
+<div class="entity">
+<div>
+<h2>Recordings</h2>
+<div class="table-scroll">
+<table class="table">
+<thead><tr><th scope="col" class="wide">Artist</th><th scope="col" class="wide">Version</th><th scope="col" class="num">Listens</th></tr></thead>
+<tbody>
+{{range .Recordings}}<tr><td>{{template "names" .Artists}}</td><td>{{dash .Version}}</td><td class="num">{{num .Listens}}</td></tr>
+{{end}}</tbody>
+</table>
+</div>
+
+<h2>Recent listens</h2>
+{{if .Recent}}{{template "listen-table" .Recent}}{{else}}<p>No listens yet.</p>{{end}}
+</div>
+<aside class="infobox">
+{{if .ShowCover}}{{template "cover" .Cover}}{{end}}
+<table>
+{{with .Labels}}<tr><th scope="row">Labels</th><td>{{range $i, $l := .}}{{if $i}}, {{end}}{{$l}}{{end}}</td></tr>{{end}}
+{{with .Albums}}<tr><th scope="row">On</th><td>{{template "names" .}}</td></tr>{{end}}
+</table>
+</aside>
+</div>
+{{end}}

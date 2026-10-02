@@ -1,0 +1,43 @@
+{{define "content"}}
+<h1>Names from MusicBrainz</h1>
+<p>For {{template "name" .Item}}</p>
+
+{{with .Found}}
+<p>Found <a href="{{$.WebURL}}" rel="noreferrer noopener">{{.Name}}</a>. <a href="{{$.Path}}/musicbrainz?q={{$.Item.Name}}">Not this one?</a></p>
+<form method="post" action="{{$.Path}}/musicbrainz">
+<input type="hidden" name="mbid" value="{{.MBID}}">
+<h2>Names</h2>
+<div class="table-scroll">
+<table class="table">
+<thead><tr><th scope="col" class="fill">Name</th><th scope="col">Kind</th></tr></thead>
+<tbody>
+{{range $.Names}}<tr><td class="fill">{{.Name}}{{if .There}} <span class="muted">(has it already)</span>{{end}}</td><td>{{dash .Kind}}</td></tr>
+{{end}}</tbody>
+</table>
+</div>
+{{if $.Released}}<p>Released {{$.Released}}{{if not $.NewReleased}} <span class="muted">(this {{$.Noun}} has a release date already, so it's kept)</span>{{end}}.</p>{{end}}
+{{if $.Links}}
+<h2>Also add</h2>
+<ul class="plain">{{range $.Links}}<li><label><input type="checkbox" name="link" value="{{.Value}}" checked> {{.Label}}: {{.Name.Name}}</label></li>{{end}}</ul>
+{{end}}
+{{with $.Missing}}<p class="help">Not in your listens, so not added: {{range $i, $m := .}}{{if $i}}, {{end}}{{$m}}{{end}}.</p>{{end}}
+<button type="submit">Add these</button> <a href="{{$.Path}}">Cancel</a>
+</form>
+{{else}}
+<form class="search" method="get" action="{{.Path}}/musicbrainz" role="search">
+<label for="q">Search MusicBrainz</label>
+<div class="search-row"><input type="text" id="q" name="q" value="{{.Query}}"><button type="submit">Search</button></div>
+</form>
+{{if .Matches}}
+<div class="table-scroll">
+<table class="table">
+<thead><tr><th scope="col" class="wide">Name</th><th scope="col" class="wide">Details</th><th scope="col" class="action"><span class="muted">Action</span></th></tr></thead>
+<tbody>
+{{range .Matches}}<tr><td>{{.Name}}{{with .Disambiguation}} <span class="muted">({{.}})</span>{{end}}</td><td class="muted">{{dash .Details}}</td><td class="action"><a class="button" href="{{$.Path}}/musicbrainz?mbid={{.MBID}}">Use this</a></td></tr>
+{{end}}</tbody>
+</table>
+</div>
+{{else if and .Query (not .Error)}}<p>MusicBrainz has nothing matching “{{.Query}}”.</p>{{end}}
+<p><a href="{{.Path}}">Cancel</a></p>
+{{end}}
+{{end}}

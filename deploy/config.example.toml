@@ -1,0 +1,20 @@
+# Chokominto settings. Copy to /etc/chokominto/config.toml.
+# Any setting can also be given as an environment variable, for example
+# CHOKOMINTO_LISTEN or CHOKOMINTO_PUBLIC_PAGES.
+
+# Where Chokominto listens. Keep it on 127.0.0.1 and put a reverse proxy
+# with HTTPS in front. Use 0.0.0.0:3939 to reach it directly on your network.
+listen = "127.0.0.1:3939"
+
+# Where your listens, settings and backups are kept.
+data_dir = "/var/lib/chokominto"
+
+# The address people use to reach Chokominto, if it's behind a reverse proxy.
+# It's shown on the Settings page when you set up scrobblers.
+# public_url = "https://music.example.org"
+
+# Whether anyone can see your history. Set to false to require logging in.
+public_pages = true
+
+# Reverse proxies allowed to tell Chokominto the visitor's real address.
+trusted_proxies = ["127.0.0.1/32", "::1/128"]
