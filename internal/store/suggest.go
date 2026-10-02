@@ -165,20 +165,67 @@ func (db *DB) FindSuggestions(ctx context.Context, userID int64) error {
 		rows.Close()
 	}
 
-	return db.Write(ctx, func(tx *sql.Tx) error {
-		now := unix()
-		for p, reason := range found {
-			// A stronger reason replaces a weaker one on an open pair.
-			// Answered pairs stay answered.
-			if _, err := tx.ExecContext(ctx, `INSERT INTO suggestions (user_id, kind, a_id, b_id, reason, score, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)
-				ON CONFLICT (kind, a_id, b_id) DO UPDATE SET reason = excluded.reason, score = excluded.score
-				WHERE status = 'open' AND excluded.score > score`,
-				userID, p.kind, p.a, p.b, reason, reasonScore[reason], now); err != nil {
-				return err
-			}
+	// Most pairs are already recorded from earlier runs. Writing only the
+	// new or strengthened ones keeps the write short: it holds the single
+	// writer, so incoming scrobbles wait for as long as it takes.
+	known, err := db.knownSuggestions(ctx, userID)
+	if err != nil {
+		return err
+	}
+	type change struct {
+		p      pair
+		reason string
+	}
+	var changes []change
+	for p, reason := range found {
+		if score, ok := known[p]; !ok || reasonScore[reason] > score {
+			changes = append(changes, change{p, reason})
 		}
-		return nil
-	})
+	}
+	// The first run on a big library can find many thousands of pairs, so
+	// they're written in short transactions that scrobbles can slip between.
+	const chunk = 500
+	for start := 0; start < len(changes); start += chunk {
+		err := db.Write(ctx, func(tx *sql.Tx) error {
+			now := unix()
+			for _, c := range changes[start:min(start+chunk, len(changes))] {
+				// A stronger reason replaces a weaker one on an open pair.
+				// Answered pairs stay answered.
+				if _, err := tx.ExecContext(ctx, `INSERT INTO suggestions (user_id, kind, a_id, b_id, reason, score, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+					ON CONFLICT (kind, a_id, b_id) DO UPDATE SET reason = excluded.reason, score = excluded.score
+					WHERE status = 'open' AND excluded.score > score`,
+					userID, c.p.kind, c.p.a, c.p.b, c.reason, reasonScore[c.reason], now); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// knownSuggestions returns every recorded pair with the score it would
+// have to beat. Answered pairs never change, so they get one nothing beats.
+func (db *DB) knownSuggestions(ctx context.Context, userID int64) (map[pair]float64, error) {
+	rows, err := db.r.QueryContext(ctx, `SELECT kind, a_id, b_id, CASE WHEN status = 'open' THEN score ELSE 2 END
+		FROM suggestions WHERE user_id = ?`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[pair]float64{}
+	for rows.Next() {
+		var p pair
+		var score float64
+		if err := rows.Scan(&p.kind, &p.a, &p.b, &score); err != nil {
+			return nil, err
+		}
+		out[p] = score
+	}
+	return out, rows.Err()
 }
 
 // A bracketed or dash-separated tail: "アイドル (TV size)", "アイドル - Idol".
