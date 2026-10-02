@@ -139,11 +139,12 @@
 <p>Other agents need the address <code>{{$.BaseURL}}/mcp</code> and the header <code>Authorization: Bearer</code> followed by the token.</p>
 </div>
 {{end}}
-<p>An AI agent like Claude can help you tidy up: find every spelling of a song, merge duplicates, name versions and link what isn't linked yet. Give it its own token and the address <code>{{.BaseURL}}/mcp</code>. Everything it changes shows up in Changes, marked with the token's name, and can be undone there.</p>
+<p>An AI agent like Claude can help you tidy up: find every spelling of a song, merge duplicates, name versions and link what isn't linked yet. Everything it changes shows up in Changes, marked with the agent's name, and can be undone there.</p>
+<p>Give the agent the address <code>{{.BaseURL}}/mcp</code>. Most agents, like the Claude app, then send you here to log in and choose whether they can change things or only look. For an agent that asks for a token instead, create one below.</p>
 {{if .Agents}}
 <div class="table-scroll">
 <table class="table">
-<thead><tr><th scope="col" class="fill">Agent</th><th scope="col">Can</th><th scope="col">Created</th><th scope="col">Last used</th><th scope="col" class="action"><span class="muted">Action</span></th></tr></thead>
+<thead><tr><th scope="col" class="fill">Agent</th><th scope="col">Can</th><th scope="col">Added</th><th scope="col">Last used</th><th scope="col" class="action"><span class="muted">Action</span></th></tr></thead>
 <tbody>
 {{range .Agents}}<tr>
 <td class="fill">{{.Label}}</td>

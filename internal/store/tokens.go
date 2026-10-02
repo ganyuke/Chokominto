@@ -62,7 +62,8 @@ func (db *DB) AgentTokenUser(ctx context.Context, tokenHash []byte) (tokenID, us
 func (db *DB) tokenUser(ctx context.Context, tokenHash []byte, which string) (tokenID, userID int64, access string, err error) {
 	var lastUsed sql.NullInt64
 	err = db.r.QueryRowContext(ctx,
-		`SELECT id, user_id, last_used_at, access FROM api_tokens WHERE token_hash = ? AND revoked_at IS NULL AND `+which, tokenHash).
+		`SELECT id, user_id, last_used_at, access FROM api_tokens
+		 WHERE token_hash = ? AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > ?) AND `+which, tokenHash, unix()).
 		Scan(&tokenID, &userID, &lastUsed, &access)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, 0, "", ErrNotFound

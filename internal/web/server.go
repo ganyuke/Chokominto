@@ -111,6 +111,7 @@ func New(cfg config.Config, db *store.DB, np *listenbrainz.NowPlaying, log *slog
 	mux.HandleFunc("POST /settings/agents", s.member(s.createAgentToken))
 	mux.HandleFunc("POST /settings/agents/{id}/revoke", s.member(s.revokeAgentToken))
 	mux.HandleFunc("/mcp", s.mcpEndpoint)
+	s.registerOAuth(mux)
 	mux.HandleFunc("POST /settings/time-zone", s.member(s.setTimeZone))
 	mux.HandleFunc("POST /settings/password", s.member(s.changePassword))
 	mux.HandleFunc("POST /settings/labels/{id}", s.member(s.updateLabel))
@@ -161,14 +162,18 @@ func New(cfg config.Config, db *store.DB, np *listenbrainz.NowPlaying, log *slog
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.handler.ServeHTTP(w, r) }
 
+// sitePolicy is the website's Content-Security-Policy.
+const sitePolicy = "default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+
 // protect applies browser protections to the website only. The API and
 // /mcp are token-authenticated and never read cookies, and Web Scrobbler
 // calls the API from an extension origin, so cross-origin checks would
-// only break it. /mcp checks Origin itself.
+// only break it. /mcp checks Origin itself. The OAuth endpoints apps call
+// directly read no cookies either.
 func (s *Server) protect(cop *http.CrossOriginProtection, next http.Handler) http.Handler {
 	site := cop.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
-		h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+		h.Set("Content-Security-Policy", sitePolicy)
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "same-origin")
 		h.Set("X-Content-Type-Options", "nosniff")
@@ -182,7 +187,7 @@ func (s *Server) protect(cop *http.CrossOriginProtection, next http.Handler) htt
 		next.ServeHTTP(w, r)
 	}))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if listenbrainz.IsAPIPath(r.URL.Path) || r.URL.Path == "/mcp" {
+		if listenbrainz.IsAPIPath(r.URL.Path) || r.URL.Path == "/mcp" || isOAuthAPI(r.URL.Path) {
 			w.Header().Set("X-Content-Type-Options", "nosniff")
 			next.ServeHTTP(w, r)
 			return
@@ -301,7 +306,7 @@ func (s *Server) loadTemplates() error {
 		},
 	}
 	s.pages = map[string]*template.Template{}
-	for _, page := range []string{"home", "history", "top", "artist", "song", "album", "scrobble", "fix", "review", "musicbrainz", "itemedit", "login", "settings", "readings", "changes", "error", "setup"} {
+	for _, page := range []string{"home", "history", "top", "artist", "song", "album", "scrobble", "fix", "review", "musicbrainz", "itemedit", "login", "connect", "settings", "readings", "changes", "error", "setup"} {
 		t, err := template.New("").Funcs(funcs).ParseFS(templateFS, "templates/layout.html", "templates/partials.html", "templates/edit.html", "templates/"+page+".html")
 		if err != nil {
 			return err

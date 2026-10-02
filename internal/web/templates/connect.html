@@ -1,0 +1,17 @@
+{{define "content"}}
+<h1>Let {{.App}} help with your music?</h1>
+<p>{{.App}} wants to reach your songs, artists, albums and the Review list. After you allow it, you go back to {{.AppHost}}.</p>
+<p>Everything it changes shows up in Changes, marked with its name, and can be undone there. You can cut it off any time in Settings.</p>
+<form class="form" method="post" action="/oauth/authorize">
+<input type="hidden" name="client_id" value="{{.Request.Client.ClientID}}">
+<input type="hidden" name="redirect_uri" value="{{.Request.RedirectURI}}">
+<input type="hidden" name="state" value="{{.Request.State}}">
+<input type="hidden" name="code_challenge" value="{{.Request.Challenge}}">
+<fieldset class="field"><legend>It can</legend>
+<label><input type="radio" name="access" value="change" checked> Look and change things</label>
+<label><input type="radio" name="access" value="look"> Only look</label>
+</fieldset>
+<button type="submit">Allow</button>
+<p class="help"><a href="{{.CancelURL}}">Don't allow</a></p>
+</form>
+{{end}}

@@ -127,7 +127,7 @@ func runServe(ctx context.Context, args []string) error {
 }
 
 // maintain takes a backup once a day (and right away if today's is
-// missing), prunes old backups and clears expired sessions.
+// missing), prunes old backups and clears expired sessions and agent sign-ins.
 func maintain(ctx context.Context, db *store.DB, c config.Config, log *slog.Logger) {
 	run := func() {
 		today := time.Now().Format("2006-01-02")
@@ -143,6 +143,9 @@ func maintain(ctx context.Context, db *store.DB, c config.Config, log *slog.Logg
 		}
 		if err := db.DeleteExpiredSessions(ctx); err != nil && ctx.Err() == nil {
 			log.Error("clearing expired sessions failed", "err", err)
+		}
+		if err := db.DeleteStaleOAuth(ctx); err != nil && ctx.Err() == nil {
+			log.Error("clearing unused agent sign-ins failed", "err", err)
 		}
 	}
 	run()

@@ -189,6 +189,7 @@ The core component. One class, `.table`.
 - Native controls, 1px `--border`, `--radius`, `--bg` background, and `--focus` outline on focus.
 - Labels above inputs. Help text, when needed, below the input (or below a lone button) in `--text-small` `--text-muted`.
 - One primary action per form, at the bottom left.
+- A choice of one among a few is a `fieldset.field` of radio buttons, its legend styled like a label and one option per line.
 
 ### Notices
 - A one-line box with a 4px left border (`--success`, `--danger` or `--border`) on `--bg-alt`.
@@ -226,6 +227,7 @@ Logged in, song, artist and album pages have two views, like Wikipedia's tabs (o
 | Scrobble | One search box, results table, "Scrobble now" or a time field |
 | Fix listen | Text as received, current link, search to relink, "remember this?", delete |
 | Review | Sections for suggestions, which one, received text (to link several spellings at once), incomplete. Sorted by listens affected, with checkboxes for bulk actions |
+| Connect an agent | Shown when an agent signs in. What it will reach, look or change as radio buttons, Allow, and a "Don't allow" link back to the agent |
 | Changes | Every merge, deletion and other edit, newest first, with an Undo button each. Called "merge history" in early notes |
 | Settings | Scrobbler tokens, time zone, week start, display name, labels (add, rename, order, hidden by default, delete), reading scrobbles (each reading with an example and a checkbox, one Save that first shows examples from your own listens and asks to confirm, then your own rules), password |
 

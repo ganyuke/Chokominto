@@ -11,12 +11,13 @@
 #     upload:<selector>=<file>  choose a file (relative to /work)
 #     playing:<artist>=<title>=<album>  tell the server what's playing now
 #     wait:<seconds>            let the page update itself
+#     connect:<name>=<redirect> an agent registers and asks to connect
 #   A path with "#id" is cropped to that section, from its heading to the
 #   next h2. Screenshots are written to /out/00.png, 01.png, ...
 #
 # Environment: LISTENS (demo listens JSON, default /work/listens.json),
 # WIDTH (default 1280).
-import json, os, re, subprocess, sys, time, urllib.request
+import json, os, re, subprocess, sys, time, urllib.parse, urllib.request
 from playwright.sync_api import sync_playwright
 
 BIN, DATA, WORK, OUT = "/out/chokominto", "/tmp/data", "/work", "/out"
@@ -81,6 +82,14 @@ with sync_playwright() as p:
                 urllib.request.urlopen(urllib.request.Request(URL + "/1/submit-listens",
                     data=json.dumps({"listen_type": "playing_now", "payload": [{"track_metadata": meta}]}).encode(),
                     headers={"Authorization": "Token " + token, "Content-Type": "application/json"}))
+            elif kind == "connect":
+                reg = urllib.request.urlopen(urllib.request.Request(URL + "/oauth/register",
+                    data=json.dumps({"client_name": sel, "redirect_uris": [val]}).encode(),
+                    headers={"Content-Type": "application/json"}))
+                client = json.load(reg)["client_id"]
+                q = urllib.parse.urlencode({"response_type": "code", "client_id": client, "redirect_uri": val, "state": "s",
+                    "code_challenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGrSstw-cM", "code_challenge_method": "S256"})
+                page.goto(URL + "/oauth/authorize?" + q)
             elif kind == "wait":
                 page.wait_for_timeout(float(rest) * 1000)
             else:

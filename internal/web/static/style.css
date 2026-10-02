@@ -232,6 +232,9 @@ form.inline { display: inline; margin: 0; }
 .form { max-width: 28rem; margin: 0 0 var(--s5); }
 .field { margin: 0 0 var(--s3); }
 .field label { display: block; margin-bottom: var(--s1); font-weight: 700; }
+fieldset.field { border: 0; padding: 0; min-width: 0; }
+fieldset.field legend { padding: 0; margin-bottom: var(--s1); font-weight: 700; }
+fieldset.field label { font-weight: 400; }
 .field .help, p.help { font-size: var(--text-small); color: var(--text-muted); margin: var(--s1) 0 0; }
 form.actions { margin: var(--s3) 0 var(--s4); }
 input[type="text"], input[type="password"], input[type="datetime-local"], select {

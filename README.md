@@ -135,7 +135,11 @@ The Edit tab on artist, song and album pages has a "Get names from MusicBrainz" 
 
 An AI agent like Claude Code can help you tidy up: find every spelling of a song, merge the duplicates, name the versions, and link what isn't linked yet. It sees your songs, artists, albums, what your scrobblers sent and the Review list. Every change it makes shows up on the Changes page, marked with the agent's name, and can be undone there.
 
-In Settings, under AI agents, create a token for the agent. Choose whether it can change things or only look. Settings then shows the command for Claude Code, and the address and token for other agents. Revoke the token there to cut the agent off.
+Give the agent the address of your Chokominto with `/mcp` at the end, like `https://music.example.org/mcp`. In the Claude app, that's under Settings, Connectors, Add custom connector. The agent then opens a page on your Chokominto where you log in and choose whether it can change things or only look. Agents like the Claude app connect from the internet, so your Chokominto needs to be reachable from outside first (see [Reaching it from outside](#reaching-it-from-outside)).
+
+Some agents ask for a token instead. In Settings, under AI agents, create one and choose whether it can change things or only look. Settings then shows the command for Claude Code, and the address and token for other agents.
+
+Every connected agent and token is listed in Settings under AI agents. Revoke it there to cut the agent off.
 
 If the agent runs where Chokominto does, or can reach it with ssh or `docker exec`, it can also start Chokominto's helper directly, with no token:
 

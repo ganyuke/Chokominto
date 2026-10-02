@@ -17,7 +17,8 @@ const maxMCPBytes = 1 << 20
 
 // mcpEndpoint is the Model Context Protocol over HTTP ("Streamable HTTP"),
 // for AI agents that can't start chokominto mcp themselves: a hosted
-// server, a container, claude.ai. Each POST carries one JSON-RPC message
+// server, a container, the Claude app. Agents use a token from Settings,
+// or sign in and get one (oauth.go). Each POST carries one JSON-RPC message
 // and gets its answer back as plain JSON. There's no event stream and no
 // session, since no tool sends anything later.
 func (s *Server) mcpEndpoint(w http.ResponseWriter, r *http.Request) {
@@ -35,14 +36,14 @@ func (s *Server) mcpEndpoint(w http.ResponseWriter, r *http.Request) {
 	}
 	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if !ok || token == "" {
-		w.Header().Set("WWW-Authenticate", `Bearer realm="chokominto"`)
+		w.Header().Set("WWW-Authenticate", `Bearer realm="chokominto", resource_metadata="`+s.resourceMetadataURL(r)+`"`)
 		http.Error(w, "Send an agent token from Settings as Authorization: Bearer <token>.", http.StatusUnauthorized)
 		return
 	}
 	tokenID, userID, canChange, err := s.db.AgentTokenUser(r.Context(), auth.HashSecret(strings.TrimSpace(token)))
 	if errors.Is(err, store.ErrNotFound) {
-		w.Header().Set("WWW-Authenticate", `Bearer realm="chokominto", error="invalid_token"`)
-		http.Error(w, "That agent token isn't valid. Make a new one in Settings.", http.StatusUnauthorized)
+		w.Header().Set("WWW-Authenticate", `Bearer realm="chokominto", error="invalid_token", resource_metadata="`+s.resourceMetadataURL(r)+`"`)
+		http.Error(w, "That agent token isn't valid or has expired. Make a new one in Settings, or connect again.", http.StatusUnauthorized)
 		return
 	}
 	if err != nil {
