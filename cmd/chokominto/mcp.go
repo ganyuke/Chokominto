@@ -17,11 +17,14 @@ import (
 func runMCP(ctx context.Context, args []string) error {
 	var userName string
 	var readOnly bool
-	c, _, err := commonFlags("mcp", args, func(fs *flag.FlagSet) {
+	c, rest, err := commonFlags("mcp", args, func(fs *flag.FlagSet) {
 		fs.StringVar(&userName, "user", "", "whose music (default: the first account)")
 		fs.BoolVar(&readOnly, "read-only", false, "only let the agent look, not change anything")
 	})
 	if err != nil {
+		return err
+	}
+	if err := noArgs("mcp", rest); err != nil {
 		return err
 	}
 	db, err := openDB(ctx, c)

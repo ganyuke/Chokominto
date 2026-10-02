@@ -27,10 +27,13 @@ const keepBackups = 14
 
 func runServe(ctx context.Context, args []string) error {
 	var debug bool
-	c, _, err := commonFlags("serve", args, func(fs *flag.FlagSet) {
+	c, rest, err := commonFlags("serve", args, func(fs *flag.FlagSet) {
 		fs.BoolVar(&debug, "debug", false, "log every request")
 	})
 	if err != nil {
+		return err
+	}
+	if err := noArgs("serve", rest); err != nil {
 		return err
 	}
 	level := slog.LevelInfo

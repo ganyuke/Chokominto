@@ -14,17 +14,17 @@ import (
 )
 
 func runImport(ctx context.Context, args []string) error {
-	if len(args) < 1 || args[0] != "maloja" {
-		return errors.New("usage: chokominto import maloja --db <malojadb.sqlite> [--apikeys <apikeys.yml>] [--user <name>]")
-	}
 	var dbPath, keysPath, userName string
-	c, _, err := commonFlags("import maloja", args[1:], func(fs *flag.FlagSet) {
+	c, rest, err := commonFlags("import maloja", args, func(fs *flag.FlagSet) {
 		fs.StringVar(&dbPath, "db", "", "Maloja's malojadb.sqlite")
 		fs.StringVar(&keysPath, "apikeys", "", "Maloja's apikeys.yml, to keep your scrobblers' keys working")
 		fs.StringVar(&userName, "user", "", "account to import into (default: the first account)")
 	})
 	if err != nil {
 		return err
+	}
+	if len(rest) != 1 || rest[0] != "maloja" {
+		return errors.New("usage: chokominto import maloja --db <malojadb.sqlite> [--apikeys <apikeys.yml>] [--user <name>]")
 	}
 	if dbPath == "" && keysPath == "" {
 		return errors.New("give --db, --apikeys, or both")

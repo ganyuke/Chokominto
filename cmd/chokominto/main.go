@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -49,7 +50,7 @@ func main() {
 	defer stop()
 
 	var err error
-	switch cmd, args := os.Args[1], os.Args[2:]; cmd {
+	switch cmd, args := splitCommand(os.Args[1:]); cmd {
 	case "serve":
 		err = runServe(ctx, args)
 	case "user":
@@ -66,6 +67,9 @@ func main() {
 		fmt.Println("chokominto", version)
 	case "-h", "--help", "help":
 		fmt.Print(usage)
+	case "":
+		fmt.Fprint(os.Stderr, usage)
+		os.Exit(2)
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command %q.\n\n%s", cmd, usage)
 		os.Exit(2)
@@ -79,19 +83,60 @@ func main() {
 	}
 }
 
+// splitCommand finds the command word, allowing -config in front of it
+// ("chokominto -config x user passwd ruby"). The options before it are
+// handed to the command with the rest.
+func splitCommand(args []string) (string, []string) {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "-config" || a == "--config" {
+			i++ // its value
+			continue
+		}
+		if strings.HasPrefix(a, "-config=") || strings.HasPrefix(a, "--config=") {
+			continue
+		}
+		return a, append(slices.Clone(args[:i]), args[i+1:]...)
+	}
+	return "", args
+}
+
 // commonFlags parses -config and returns the loaded config plus the
-// remaining positional arguments.
+// remaining positional arguments. Options may come before or after the
+// positional arguments ("user passwd ruby -config x" works), and "--" ends
+// the options.
 func commonFlags(name string, args []string, extra func(*flag.FlagSet)) (config.Config, []string, error) {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	path := fs.String("config", "", "config file")
 	if extra != nil {
 		extra(fs)
 	}
-	if err := fs.Parse(args); err != nil {
-		return config.Config{}, nil, err
+	var positional []string
+	for {
+		if err := fs.Parse(args); err != nil {
+			return config.Config{}, nil, err
+		}
+		// flag stops at the first non-option, or just after "--".
+		rest := fs.Args()
+		consumed := args[:len(args)-len(rest)]
+		if len(rest) == 0 || len(consumed) > 0 && consumed[len(consumed)-1] == "--" {
+			positional = append(positional, rest...)
+			break
+		}
+		positional = append(positional, rest[0])
+		args = rest[1:]
 	}
 	c, err := config.Load(*path)
-	return c, fs.Args(), err
+	return c, positional, err
+}
+
+// noArgs refuses words a command doesn't take, so a mistyped option
+// (a path without -config, say) isn't quietly ignored.
+func noArgs(name string, rest []string) error {
+	if len(rest) > 0 {
+		return fmt.Errorf("%s doesn't take %q. Options start with -, for example -config <file>", name, rest[0])
+	}
+	return nil
 }
 
 func openDB(ctx context.Context, c config.Config) (*store.DB, error) {
@@ -102,13 +147,16 @@ func openDB(ctx context.Context, c config.Config) (*store.DB, error) {
 }
 
 func runUser(ctx context.Context, args []string) error {
-	if len(args) < 1 {
-		return errors.New("user needs a subcommand: add or passwd")
-	}
-	sub := args[0]
-	c, rest, err := commonFlags("user "+sub, args[1:], nil)
+	c, rest, err := commonFlags("user", args, nil)
 	if err != nil {
 		return err
+	}
+	if len(rest) < 1 {
+		return errors.New("user needs a subcommand: add or passwd")
+	}
+	sub, rest := rest[0], rest[1:]
+	if sub != "add" && sub != "passwd" {
+		return fmt.Errorf("unknown user command %q. Use add or passwd", sub)
 	}
 	if len(rest) != 1 {
 		return fmt.Errorf("usage: chokominto user %s <name>", sub)
@@ -193,13 +241,16 @@ func newPassword() (password, hash string, err error) {
 }
 
 func runToken(ctx context.Context, args []string) error {
-	if len(args) < 1 {
-		return errors.New("token needs a subcommand: add, list or revoke")
-	}
-	sub := args[0]
-	c, rest, err := commonFlags("token "+sub, args[1:], nil)
+	c, rest, err := commonFlags("token", args, nil)
 	if err != nil {
 		return err
+	}
+	if len(rest) < 1 {
+		return errors.New("token needs a subcommand: add, list or revoke")
+	}
+	sub, rest := rest[0], rest[1:]
+	if sub != "add" && sub != "list" && sub != "revoke" {
+		return fmt.Errorf("unknown token command %q. Use add, list or revoke", sub)
 	}
 	if len(rest) < 1 {
 		return fmt.Errorf("usage: chokominto token %s <user> ...", sub)
@@ -264,8 +315,11 @@ func runToken(ctx context.Context, args []string) error {
 }
 
 func runBackup(ctx context.Context, args []string) error {
-	c, _, err := commonFlags("backup", args, nil)
+	c, rest, err := commonFlags("backup", args, nil)
 	if err != nil {
+		return err
+	}
+	if err := noArgs("backup", rest); err != nil {
 		return err
 	}
 	db, err := openDB(ctx, c)
