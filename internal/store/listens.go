@@ -120,6 +120,32 @@ func (db *DB) SourceMSID(ctx context.Context, userID int64, t SourceText) (strin
 	return msid, err
 }
 
+// SourceLink finds where text was linked the last time it arrived, without
+// storing anything, so what's playing can show its song before it's
+// scrobbled. Text received with another album or none still finds the song
+// when the artist and title only ever went to one song. rec is 0 when
+// nothing fits.
+func (db *DB) SourceLink(ctx context.Context, userID int64, t SourceText) (rec, rel int64, err error) {
+	var r, a sql.NullInt64
+	err = db.r.QueryRowContext(ctx,
+		`SELECT recording_id, release_id FROM sources WHERE `+sourceTextMatch,
+		userID, t.Artist, t.Title, t.Album, t.AlbumArtist).Scan(&r, &a)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return 0, 0, err
+	}
+	if r.Valid {
+		return r.Int64, a.Int64, nil
+	}
+	err = db.r.QueryRowContext(ctx,
+		`SELECT min(recording_id) FROM sources WHERE user_id = ? AND artist_text = ? AND title_text = ? AND recording_id IS NOT NULL
+		HAVING count(DISTINCT recording_id) = 1`,
+		userID, t.Artist, t.Title).Scan(&r)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, 0, nil
+	}
+	return r.Int64, 0, err
+}
+
 // newUUID returns a random (version 4) UUID.
 func newUUID() string {
 	var b [16]byte

@@ -168,7 +168,7 @@ func (a *API) submit(w http.ResponseWriter, r *http.Request) {
 
 	if sub.Type == "playing_now" {
 		l := sub.Listens[0]
-		a.NowPlaying.Set(c.userID, Track{Artist: l.Artist, Title: l.Title, Album: l.Album}, sub.DurationMS)
+		a.NowPlaying.Set(c.userID, Track{Artist: l.Artist, Title: l.Title, Album: l.Album, AlbumArtist: l.AlbumArtist}, sub.DurationMS)
 		resp := map[string]any{"status": "ok"}
 		if r.URL.Query().Get("return_msid") == "true" {
 			if msid, err := a.DB.SourceMSID(r.Context(), c.userID, store.SourceText{Artist: l.Artist, Title: l.Title, Album: l.Album, AlbumArtist: l.AlbumArtist}); err == nil {

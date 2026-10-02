@@ -4,11 +4,11 @@ This is the single source of truth for how Chokominto looks and reads. Every pag
 
 ## Principles
 
-1. **Reference-site boring, in chocolate mint.** The look is MyAnimeList and AO3 more than Wikipedia (owner, 2026-10-01: "a little too Wikipedia like"), not a streaming app. Pages are dark text and tables on a white background, with a mint top bar and chocolate brown headings, as the name says (チョコミント). No dark mode, cards, hero images, gradients, glows, shadows or animation.
+1. **Reference-site boring, in chocolate mint.** The look is MyAnimeList and AO3 more than Wikipedia (owner, 2026-10-01: "a little too Wikipedia like"), not a streaming app. Pages are dark text and tables on a white background, with a mint top bar and chocolate brown headings, as the name says (チョコミント). No dark mode, cards, hero images, gradients, glows, shadows or animation. The one box besides the infobox is [Now playing](#now-playing), which the owner asked for (2026-10-02).
 2. **Tables are the main component.** Listens, rankings and entity lists are all tables with real columns. Numbers line up.
 3. **Dense but readable.** Lots of rows on screen, compact padding, generous line height for mixed Japanese and Latin text.
 4. **One way to do each thing.** One button style, one table style, one notice style. No one-off variants.
-5. **Works without JavaScript.** Reading pages, sorting and paging are plain links and forms. Script only adds convenience, like search-as-you-type.
+5. **Works without JavaScript.** Reading pages, sorting and paging are plain links and forms. Script only adds convenience, like search-as-you-type and [live parts](#live-parts).
 6. **Words earn their place.** See [Microcopy](#microcopy).
 
 ## Tokens
@@ -55,6 +55,7 @@ All colors, sizes and spacing come from these custom properties. Nothing in the 
   --radius: 2px;
   --thumb:  32px;   /* artwork in table rows */
   --cover:  220px;  /* artwork in infobox */
+  --playing: 96px;  /* artwork in the Now playing box */
   --page-max: 1200px;
 }
 ```
@@ -138,6 +139,24 @@ The core component. One class, `.table`.
 - A box with `--bg-alt` background and 1px `--border`, like a Wikipedia infobox. At 900px and wider the page is a two-column grid, content on the left and the infobox (18rem) on the right, so tables never flow around it. Narrower, the infobox comes first.
 - Cover at the top, then a two-column key/value table of reference details: type, release date, labels, members, also counts for, the albums a song is on. Listens aren't here (owner, 2026-10-01).
 
+### Now playing
+```
+┌──────────────────────────────────────────────┐
+│ ┌──────┐  Now playing                        │
+│ │ art  │  Prologue                           │
+│ │      │  柳川和樹                            │
+│ └──────┘  Atelier Ryza … Original Soundtrack │
+└──────────────────────────────────────────────┘
+```
+- On Home and History, under the title, while something is playing. A box like the infobox (`--bg-alt`, 1px `--border`), as wide as its content up to the page width.
+- The album's cover at `--playing` on the left, then "Now playing" in `--text-small` `--text-muted`, the song in bold at `--text-h3`, the artists, and the album when there is one.
+- When the song is already known, the song, artists and album are links and the cover is its album's. Otherwise the text is shown as sent, plain, with an empty square.
+
+### Live parts
+- With JavaScript, a few parts keep themselves current while the page is open: Now playing, Recent listens on Home, the newest History page, and the "Still sorting out your history" notice, which counts down and goes away at zero.
+- A part changes only when there's something new. No spinners, highlights or animation.
+- Without JavaScript the page is the same, as of when it loaded.
+
 ### Stats line
 - Right under an artist's, song's or album's name: **listens** (bold, `--heading`, `--text-h3`), then in `--text-muted`, separated by " · ": its all-time rank as the ranking page counts it by default ("#1 album of all time", left out for items hidden by default, like characters), and when it was first and last heard ("heard 1 Oct 2026" when that's the same day). "No listens yet." when there are none.
 
@@ -191,7 +210,7 @@ Plain links. History pages by date, rankings by 50 rows.
 
 | Page | Main content |
 |---|---|
-| Home | Now playing line, the last 10 listens, top 10 songs / artists / albums this week |
+| Home | Now playing box, the last 10 listens, top 10 songs / artists / albums this week |
 | History | Listens grouped under date headings. Columns: time, artwork, song, artist, album |
 | Top songs | Period tabs, "Combine versions" on/off. Columns: rank, artwork, song, artist, listens |
 | Top artists | Period tabs. Columns: rank, artwork, artist, total, credited, via groups |
@@ -208,13 +227,15 @@ Logged in, song, artist and album pages have two views, like Wikipedia's tabs (o
 | Fix listen | Text as received, current link, search to relink, "remember this?", delete |
 | Review | Sections for suggestions, which one, received text (to link several spellings at once), incomplete. Sorted by listens affected, with checkboxes for bulk actions |
 | Changes | Every merge, deletion and other edit, newest first, with an Undo button each. Called "merge history" in early notes |
-| Settings | Scrobbler tokens, time zone, week start, labels (add, rename, order, hidden by default, delete), reading scrobbles (each reading with an example and a checkbox, one Save that first shows examples from your own listens and asks to confirm, then your own rules), password |
+| Settings | Scrobbler tokens, time zone, week start, display name, labels (add, rename, order, hidden by default, delete), reading scrobbles (each reading with an example and a checkbox, one Save that first shows examples from your own listens and asks to confirm, then your own rules), password |
 
 ### Listen history mockup
 ```
 History
 ────────────────────────────────────────────────────────────────
- Now playing: Idol アイドル… — YOASOBI
+┌────┐ Now playing
+│art │ Idol
+└────┘ YOASOBI
 
  Tuesday, 30 September 2026
 ┌───────┬────┬───────────────────────────────┬────────────────────┬────────────────────┬─────┐

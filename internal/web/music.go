@@ -424,11 +424,19 @@ var topTitles = map[string]string{"songs": "Top songs", "artists": "Top artists"
 const catchingUpAt = 25
 
 // catchingUp says rankings are still filling in, while a big batch of
-// listens waits to be linked.
+// listens waits to be linked. Once shown, the page counts it down to
+// nothing by itself (see live.go).
 func (s *Server) catchingUp(ctx context.Context) string {
 	n, err := s.db.PendingJobs(ctx, "resolve")
 	if err != nil || n < catchingUpAt {
 		return ""
+	}
+	return sortingText(n)
+}
+
+func sortingText(n int) string {
+	if n == 1 {
+		return "Still sorting out your history, with 1 song to go. Rankings fill in as that finishes."
 	}
 	return numberPrinter.Sprintf("Still sorting out your history, with %d songs to go. Rankings fill in as that finishes.", n)
 }
@@ -439,7 +447,7 @@ func (s *Server) top(kind string) func(http.ResponseWriter, *http.Request, *stor
 		now := time.Now()
 		p := periodFor(r, owner, now)
 		path := r.URL.Path
-		page := topPage{Page: Page{Title: topTitles[kind], Nav: kind, User: viewer, Info: s.catchingUp(ctx)}, Kind: kind, Period: buildPeriodNav(path, r, p, owner, now)}
+		page := topPage{Page: Page{Title: topTitles[kind], Nav: kind, User: viewer, Sorting: s.catchingUp(ctx)}, Kind: kind, Period: buildPeriodNav(path, r, p, owner, now)}
 
 		f, hide, err := s.filters(ctx, r.URL.Query(), owner, entityOf[kind])
 		if err != nil {
@@ -509,7 +517,7 @@ func (s *Server) top(kind string) func(http.ResponseWriter, *http.Request, *stor
 type homePage struct {
 	Page
 	OwnerName string
-	Playing   *nowPlaying
+	Playing   *playingBox
 	Recent    []listenRow
 	Week      string
 	WeekQuery string
@@ -518,23 +526,16 @@ type homePage struct {
 	Albums    []albumRow
 }
 
-type nowPlaying struct {
-	Title  string
-	Artist string
-}
-
 func (s *Server) home(w http.ResponseWriter, r *http.Request, viewer *store.User, owner store.User) {
 	ctx := r.Context()
 	now := time.Now()
 	p := period.Containing(period.Week, now, location(owner), weekStart(owner))
-	page := homePage{Page: Page{Title: "", Nav: "home", User: viewer, Info: s.catchingUp(ctx)}, OwnerName: owner.Name, Week: p.Label()}
+	page := homePage{Page: Page{Title: "", Nav: "home", User: viewer, Sorting: s.catchingUp(ctx)}, OwnerName: owner.Shown(), Week: p.Label()}
 	page.WeekQuery = periodParams(p).Encode()
-	if t, ok := s.np.Get(owner.ID); ok {
-		page.Playing = &nowPlaying{t.Title, t.Artist}
-	}
-	ls, err := s.db.Listens(ctx, owner.ID, store.ListenRange{Limit: 10})
+	var err error
+	page.Playing, err = s.nowPlaying(ctx, owner)
 	if err == nil {
-		page.Recent, err = s.listenRows(ctx, ls, location(owner), viewer != nil)
+		page.Recent, err = s.recentListens(ctx, owner, viewer)
 	}
 	// The home page uses each label's default filter.
 	var hideSongs, hideArtists, hideAlbums []int64

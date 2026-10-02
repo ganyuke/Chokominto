@@ -1,14 +1,9 @@
 {{define "content"}}
 <h1>{{.OwnerName}}’s listening</h1>
-{{with .Playing}}<p class="now-playing"><span class="muted">Now playing:</span> {{dash .Title}} — {{dash .Artist}}</p>{{end}}
+{{template "now-playing" .Playing}}
 
 <h2>Recent listens</h2>
-{{if .Recent}}
-{{template "listen-table" .Recent}}
-<p><a href="/history">All listens</a></p>
-{{else}}
-<p>No listens yet.{{if .User}} <a href="/settings#scrobblers">Set up a scrobbler</a> to start.{{end}}</p>
-{{end}}
+<div data-live="recent">{{template "recent-listens" .}}</div>
 
 <h2>This week <span class="muted small">{{.Week}}</span></h2>
 <div class="columns">

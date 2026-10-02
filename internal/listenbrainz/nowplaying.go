@@ -14,10 +14,11 @@ type NowPlaying struct {
 }
 
 type Track struct {
-	Artist  string
-	Title   string
-	Album   string
-	Expires time.Time
+	Artist      string
+	Title       string
+	Album       string
+	AlbumArtist string
+	Expires     time.Time
 }
 
 const (

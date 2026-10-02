@@ -36,6 +36,7 @@
   --radius: 2px;
   --thumb:  32px;
   --cover:  220px;
+  --playing: 96px;
   --page-max: 1200px;
 
   color-scheme: light;
@@ -258,7 +259,28 @@ code {
 
 /* Now playing and pager */
 
-.now-playing { margin: 0 0 var(--s4); }
+.playing {
+  display: flex;
+  gap: var(--s3);
+  align-items: flex-start;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  padding: var(--s3);
+  margin: 0 0 var(--s4);
+  width: fit-content;
+  max-width: 100%;
+}
+.playing img, .playing .no-art {
+  flex: none;
+  display: block;
+  width: var(--playing);
+  height: var(--playing);
+  object-fit: cover;
+  border: 1px solid var(--border-light);
+  background: var(--bg);
+}
+.playing p { margin: 0; overflow-wrap: anywhere; }
+.playing .playing-song { font-weight: 700; font-size: var(--text-h3); }
 
 .pager {
   display: flex;

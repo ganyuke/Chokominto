@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{if .Title}}{{.Title}} · {{end}}Chokominto</title>
 <link rel="stylesheet" href="{{static "style.css"}}">
+<script src="{{static "live.js"}}" defer></script>
 </head>
 <body>
 <header class="bar">
@@ -26,7 +27,7 @@
 <a href="/changes"{{if eq .Nav "changes"}} aria-current="page"{{end}}>Changes</a>
 <a href="/settings"{{if eq .Nav "settings"}} aria-current="page"{{end}}>Settings</a>
 </nav>
-<span class="account">{{.User.Name}} <form class="inline" method="post" action="/logout"><button class="link-button" type="submit">Log out</button></form></span>
+<span class="account">{{.User.Shown}} <form class="inline" method="post" action="/logout"><button class="link-button" type="submit">Log out</button></form></span>
 {{else if ne .Nav "login"}}
 <span class="account"><a href="/login">Log in</a></span>
 {{end}}
@@ -36,7 +37,7 @@
 <main class="page">
 {{if .Notice}}<div class="notice notice-success" role="status">{{.Notice}}{{with .Undo}} <form class="inline" method="post" action="/changes/{{.}}/undo">{{with $.Back}}<input type="hidden" name="back" value="{{.}}">{{end}}<button type="submit">Undo</button></form>{{end}}</div>{{end}}
 {{if .Error}}<p class="notice notice-danger" role="alert">{{.Error}}</p>{{end}}
-{{if .Info}}<p class="notice" role="status">{{.Info}}</p>{{end}}
+{{if .Sorting}}<p class="notice" role="status" data-live="sorting">{{.Sorting}}</p>{{end}}
 {{template "content" .}}
 </main>
 </body>

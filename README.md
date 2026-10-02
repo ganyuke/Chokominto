@@ -65,7 +65,7 @@ The first time Chokominto starts, it makes your account, called ruby, with a pas
 journalctl -u chokominto | grep password
 ```
 
-Open Chokominto in your browser and log in. You can change the password in Settings.
+Open Chokominto in your browser and log in. You can change the password in Settings, and the name your pages show under Name there. You keep logging in as ruby.
 
 To choose the password yourself, set `CHOKOMINTO_PASSWORD` for the first start, for example in Docker or with `Environment=` in the service file. It's only used when the account is made.
 

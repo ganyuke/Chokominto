@@ -101,6 +101,7 @@ func New(cfg config.Config, db *store.DB, np *listenbrainz.NowPlaying, log *slog
 	mux.HandleFunc("GET /song/{id}", s.viewer(s.songPage))
 	mux.HandleFunc("GET /album/{id}", s.viewer(s.albumPage))
 	mux.HandleFunc("GET /history", s.viewer(s.history))
+	mux.HandleFunc("GET /live", s.viewer(s.live))
 	mux.HandleFunc("GET /login", s.loginPage)
 	mux.HandleFunc("POST /login", s.login)
 	mux.HandleFunc("POST /logout", s.logout)
@@ -119,6 +120,7 @@ func New(cfg config.Config, db *store.DB, np *listenbrainz.NowPlaying, log *slog
 	mux.HandleFunc("POST /settings/readings", s.member(s.saveReadings))
 	mux.HandleFunc("POST /settings/pictures", s.member(s.setFindArtwork))
 	mux.HandleFunc("POST /settings/names", s.member(s.setShowOtherNames))
+	mux.HandleFunc("POST /settings/display-name", s.member(s.setDisplayName))
 	mux.HandleFunc("POST /settings/pictures/clean", s.member(s.cleanArtwork))
 	mux.HandleFunc("POST /settings/rules/{id}", s.member(s.changeRule))
 	mux.HandleFunc("POST /settings/labels/{id}/move", s.member(s.moveLabel))
@@ -317,8 +319,10 @@ type Page struct {
 	Notice string
 	Undo   int64  // an edit the notice offers to undo
 	Back   string // where Undo returns to, when not Changes
-	Info   string
-	Error  string
+	// Sorting says rankings are still filling in after an import. Pages
+	// count it down by themselves.
+	Sorting string
+	Error   string
 }
 
 func (s *Server) render(w http.ResponseWriter, status int, page string, data any) {

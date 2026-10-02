@@ -16,6 +16,17 @@ type User struct {
 	FindArtwork  bool // look for pictures online
 	// ShowOtherNames shows an item's other names under its name.
 	ShowOtherNames bool
+	// DisplayName is shown on pages instead of Name when set. Name is
+	// what you log in with, and it never changes.
+	DisplayName string
+}
+
+// Shown is the name pages show for the account.
+func (u User) Shown() string {
+	if u.DisplayName != "" {
+		return u.DisplayName
+	}
+	return u.Name
 }
 
 var ErrNameTaken = errors.New("name already taken")
@@ -33,11 +44,11 @@ func (db *DB) CreateUser(ctx context.Context, name, passwordHash string) (int64,
 	return id, err
 }
 
-const userCols = `id, name, password_hash, time_zone, week_start, find_artwork, show_other_names`
+const userCols = `id, name, password_hash, time_zone, week_start, find_artwork, show_other_names, display_name`
 
 func scanUser(row *sql.Row) (User, error) {
 	var u User
-	err := row.Scan(&u.ID, &u.Name, &u.PasswordHash, &u.TimeZone, &u.WeekStart, &u.FindArtwork, &u.ShowOtherNames)
+	err := row.Scan(&u.ID, &u.Name, &u.PasswordHash, &u.TimeZone, &u.WeekStart, &u.FindArtwork, &u.ShowOtherNames, &u.DisplayName)
 	if errors.Is(err, sql.ErrNoRows) {
 		return u, ErrNotFound
 	}
@@ -69,6 +80,15 @@ func (db *DB) SetPassword(ctx context.Context, userID int64, passwordHash string
 			return ErrNotFound
 		}
 		_, err = tx.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = ?`, userID)
+		return err
+	})
+}
+
+// SetDisplayName changes the name pages show. "" goes back to the account
+// name.
+func (db *DB) SetDisplayName(ctx context.Context, userID int64, name string) error {
+	return db.Write(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `UPDATE users SET display_name = ? WHERE id = ?`, name, userID)
 		return err
 	})
 }

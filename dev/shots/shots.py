@@ -9,6 +9,8 @@
 #     fill:<selector>=<text>    type into a field
 #     select:<selector>=<value> pick an option
 #     upload:<selector>=<file>  choose a file (relative to /work)
+#     playing:<artist>=<title>=<album>  tell the server what's playing now
+#     wait:<seconds>            let the page update itself
 #   A path with "#id" is cropped to that section, from its heading to the
 #   next h2. Screenshots are written to /out/00.png, 01.png, ...
 #
@@ -71,6 +73,16 @@ with sync_playwright() as p:
                 page.select_option(sel, val)
             elif kind == "upload":
                 page.set_input_files(sel, WORK + "/" + val)
+            elif kind == "playing":
+                artist, title, album = (rest.split("=") + ["", ""])[:3]
+                meta = {"artist_name": artist, "track_name": title}
+                if album:
+                    meta["release_name"] = album
+                urllib.request.urlopen(urllib.request.Request(URL + "/1/submit-listens",
+                    data=json.dumps({"listen_type": "playing_now", "payload": [{"track_metadata": meta}]}).encode(),
+                    headers={"Authorization": "Token " + token, "Content-Type": "application/json"}))
+            elif kind == "wait":
+                page.wait_for_timeout(float(rest) * 1000)
             else:
                 sys.exit("unknown step " + step)
         shot = f"{OUT}/{n:02d}.png"

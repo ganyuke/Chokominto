@@ -387,3 +387,27 @@ func TestArtFiles(t *testing.T) {
 		t.Errorf("private art: %d", code)
 	}
 }
+
+func TestDisplayName(t *testing.T) {
+	e := newEnv(t, true)
+	e.login()
+	if code, _, h := e.post("/settings/display-name", url.Values{"display_name": {"  Elaina  the   Witch "}}); code != http.StatusSeeOther || !strings.Contains(h.Get("Location"), "notice=display-name") {
+		t.Fatalf("save: %d %v", code, h)
+	}
+	_, body, _ := e.get("/")
+	if !strings.Contains(body, "Elaina the Witch’s listening") || !strings.Contains(body, `<span class="account">Elaina the Witch <form`) {
+		t.Fatal("display name not shown")
+	}
+	// Logging in still takes the account name.
+	e.post("/logout", nil)
+	e.login()
+
+	if code, body, _ := e.post("/settings/display-name", url.Values{"display_name": {strings.Repeat("あ", displayNameMax+1)}}); code != http.StatusBadRequest || !strings.Contains(body, "too long") {
+		t.Fatalf("too long: %d", code)
+	}
+	// Empty goes back to the account name.
+	e.post("/settings/display-name", url.Values{"display_name": {""}})
+	if _, body, _ := e.get("/"); !strings.Contains(body, "elaina’s listening") {
+		t.Fatal("empty name didn't go back to the account name")
+	}
+}

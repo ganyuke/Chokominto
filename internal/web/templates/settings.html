@@ -162,6 +162,13 @@
 <button type="submit">Create token</button>
 </form>
 
+<h2 id="display-name">Name</h2>
+<form class="form" method="post" action="/settings/display-name">
+<div class="field"><label for="display-name-field">Display name</label><input type="text" id="display-name-field" name="display_name" value="{{.User.Shown}}" maxlength="60">
+<p class="help">Shown on your pages. You still log in as {{.User.Name}}. Leave it empty to use that.</p></div>
+<button type="submit">Save</button>
+</form>
+
 <h2 id="password">Password</h2>
 <form class="form" method="post" action="/settings/password">
 <input type="text" name="username" value="{{.User.Name}}" autocomplete="username" hidden>

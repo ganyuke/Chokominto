@@ -2,6 +2,7 @@ package web
 
 import (
 	"chokominto/internal/artwork"
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -12,9 +13,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"chokominto/internal/auth"
-	"chokominto/internal/listenbrainz"
 	"chokominto/internal/resolve"
 	"chokominto/internal/store"
 )
@@ -37,10 +38,11 @@ type dayGroup struct {
 
 type historyPage struct {
 	Page
-	Playing *listenbrainz.Track
+	Playing *playingBox
 	Days    []dayGroup
 	Newer   string
 	Older   string
+	Live    bool // the newest page, which updates itself
 }
 
 func parseCursor(v string) (store.Cursor, bool) {
@@ -57,30 +59,40 @@ func cursorParam(l store.Listen) string { return fmt.Sprintf("%d.%d", l.Listened
 
 func (s *Server) history(w http.ResponseWriter, r *http.Request, viewer *store.User, owner store.User) {
 	ctx := r.Context()
+	p := historyPage{Page: Page{Title: "History", Nav: "history", User: viewer}}
+	s.doneNotice(r, viewer, &p.Page)
+	playing, err := s.nowPlaying(ctx, owner)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	p.Playing = playing
+	if err := s.historyDays(ctx, r.URL.Query(), viewer, owner, &p); err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	s.render(w, http.StatusOK, "history", p)
+}
+
+// historyDays fills in one page of listens, with links to the pages
+// around it. The newest page keeps itself current in the browser.
+func (s *Server) historyDays(ctx context.Context, q url.Values, viewer *store.User, owner store.User, p *historyPage) error {
 	rng := store.ListenRange{Limit: historyPageSize}
-	q := r.URL.Query()
 	if c, ok := parseCursor(q.Get("before")); ok {
 		rng.Before = &c
 	} else if c, ok := parseCursor(q.Get("after")); ok {
 		rng.After = &c
 		rng.Oldest = true
 	}
+	p.Live = rng.Before == nil && rng.After == nil
 	ls, err := s.db.Listens(ctx, owner.ID, rng)
 	if err != nil {
-		s.serverError(w, r, err)
-		return
-	}
-
-	p := historyPage{Page: Page{Title: "History", Nav: "history", User: viewer}}
-	s.doneNotice(r, viewer, &p.Page)
-	if t, ok := s.np.Get(owner.ID); ok {
-		p.Playing = &t
+		return err
 	}
 	loc := location(owner)
 	rows, err := s.listenRows(ctx, ls, loc, viewer != nil)
 	if err != nil {
-		s.serverError(w, r, err)
-		return
+		return err
 	}
 	for i, l := range ls {
 		label := time.Unix(l.ListenedAt, 0).In(loc).Format("Monday, 2 January 2006")
@@ -94,22 +106,20 @@ func (s *Server) history(w http.ResponseWriter, r *http.Request, viewer *store.U
 		first, last := ls[0], ls[len(ls)-1]
 		newer, err := s.db.Listens(ctx, owner.ID, store.ListenRange{After: &store.Cursor{TS: first.ListenedAt, ID: first.ID}, Limit: 1})
 		if err != nil {
-			s.serverError(w, r, err)
-			return
+			return err
 		}
 		if len(newer) > 0 {
 			p.Newer = "/history?after=" + cursorParam(first)
 		}
 		older, err := s.db.Listens(ctx, owner.ID, store.ListenRange{Before: &store.Cursor{TS: last.ListenedAt, ID: last.ID}, Limit: 1})
 		if err != nil {
-			s.serverError(w, r, err)
-			return
+			return err
 		}
 		if len(older) > 0 {
 			p.Older = "/history?before=" + cursorParam(last)
 		}
 	}
-	s.render(w, http.StatusOK, "history", p)
+	return nil
 }
 
 // Login
@@ -240,6 +250,7 @@ var notices = map[string]string{
 	"revoked":          "Token revoked. That scrobbler can't send listens anymore.",
 	"agent-revoked":    "Token revoked. That agent can't reach your music anymore.",
 	"tz":               "Time zone saved.",
+	"display-name":     "Name saved.",
 	"password":         "Password changed. You've been logged out everywhere else.",
 	"undone":           "Undone.",
 	"already":          "That change was already undone.",
@@ -411,6 +422,25 @@ func (s *Server) setTimeZone(w http.ResponseWriter, r *http.Request, u *store.Us
 		return
 	}
 	http.Redirect(w, r, "/settings?notice=tz#time-zone", http.StatusSeeOther)
+}
+
+// displayNameMax is the longest display name, in characters.
+const displayNameMax = 60
+
+func (s *Server) setDisplayName(w http.ResponseWriter, r *http.Request, u *store.User) {
+	name := strings.Join(strings.Fields(r.PostFormValue("display_name")), " ")
+	if utf8.RuneCountInString(name) > displayNameMax {
+		s.settingsError(w, r, u, "That name is too long. Keep it to 60 characters.")
+		return
+	}
+	if name == u.Name {
+		name = ""
+	}
+	if err := s.db.SetDisplayName(r.Context(), u.ID, name); err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	http.Redirect(w, r, "/settings?notice=display-name#display-name", http.StatusSeeOther)
 }
 
 func (s *Server) changePassword(w http.ResponseWriter, r *http.Request, u *store.User) {

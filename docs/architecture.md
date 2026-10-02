@@ -528,7 +528,7 @@ Served at `/1/…`, and also at `/apis/listenbrainz/1/…` and `/apis/lbrnz/1/�
 - **Auth:** the `Authorization` scheme is case-insensitive. `?token=` is also accepted on `validate-token`. Read endpoints are public when `public_pages` is on, like the website.
 - **Returned track metadata** is the source text as received, plus the linked song, artist and album names under `mbid_mapping`-style fields where Pano reads them. Returned timestamps are Unix seconds.
 - **Errors** use the ListenBrainz shape `{"code":N,"error":"…"}`, always as JSON (Web Scrobbler calls `response.json()` on every reply), with the real status code. Unknown methods return 404, not 200.
-- **Now playing** is kept in memory per user and expires after the track's duration if sent, or 10 minutes otherwise. Home and History show it. It's not stored.
+- **Now playing** is kept in memory per user and expires after the track's duration if sent, or 10 minutes otherwise. Home and History show it. It's not stored. To show the song's page, artists, album and cover, the text is looked up in `sources` read-only (`SourceLink`): the exact text first, then the same artist and title when they only ever went to one recording. Text never received shows as sent until its scrobble is linked.
 - **CORS:** API routes send `Access-Control-Allow-Origin: *`. They're token-authenticated and never read cookies, so this is safe. Web Scrobbler sends an extension `Origin`, which is why API routes are also excluded from cross-origin protection.
 - **Contract tests** replay payloads built from the two clients' serializers. Fuzz tests cover the JSON decoder.
 
@@ -704,6 +704,7 @@ Two runners, each with one worker: one for linking and Review (`resolve`, `repar
 
 - **Routes:** `/`, `/history`, `/top/songs`, `/top/artists`, `/top/albums`, `/song/{id}`, `/recording/{id}`, `/artist/{id}`, `/album/{id}`, `/listen/{id}/fix`, `/scrobble`, `/review`, `/changes`, `/settings`, `/login`. Merged entity ids redirect to the survivor.
 - **No JavaScript needed** for reading, sorting and paging. Small vanilla scripts add search-as-you-type on Scrobble and inline actions on Review. All script and CSS are files under `static/`, with no inline code, so the CSP stays strict.
+- **Live parts.** `static/live.js` keeps elements marked `data-live` current while the tab is visible: now playing on Home and History, Recent listens on Home, the newest History page, and the sorting-out note on Home and rankings. It asks `GET /live?parts=…` (same access as the pages) every 15 s, or every 5 s while the sorting note is up. The answer has each part rendered by the same template as the page, and the script only swaps a part whose HTML changed. The sorting note appears at 25 songs waiting (as before) and then counts down to zero, where it goes away. Older History pages don't update, so paging stays put.
 - **Periods** are computed in the owner's time zone. `time/tzdata` is embedded so the Pi doesn't need system tzdata.
 - **Manual scrobbling** searches `artist_aliases`, `song_aliases` and `release_aliases` by all three match keys, exact and prefix, then goes through `ingest` with `origin = 'manual'` and a synthetic payload. Being logged in is enough. There's no admin mode.
 
