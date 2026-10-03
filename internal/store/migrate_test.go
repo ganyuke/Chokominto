@@ -363,3 +363,45 @@ func TestOpenConcurrently(t *testing.T) {
 		}
 	}
 }
+
+func TestMigrateMergedNamesHidden(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "v14.db")
+	raw := openAtVersion(t, path, 14)
+	for _, q := range []string{
+		`INSERT INTO users (id, name, password_hash, created_at) VALUES (1, 'elaina', 'h', 0)`,
+		`INSERT INTO songs (id, user_id, name, created_at) VALUES (1, 1, 'Fukashigi no Carte', 0), (2, 1, 'x', 0)`,
+		`INSERT INTO song_aliases (id, song_id, name, lang, match_key) VALUES
+			(1, 1, 'Fukashigi no Carte', 'romaji', 'a'), (2, 1, '不可思議のカルテ', 'original', 'b'),
+			(3, 1, 'Fukashigi No Carte.mp3', 'en', 'c'), (4, 1, 'Fukashigi no Carte (lofi)', 'en', 'd')`,
+		`INSERT INTO edits (id, user_id, kind, summary, automatic, created_at) VALUES (1, 1, 'merge', 'Merged', 0, 0), (2, 1, 'merge', 'Merged', 0, 0)`,
+		`UPDATE edits SET undone_at = 1 WHERE id = 2`,
+		`INSERT INTO edit_changes (edit_id, seq, op, tbl, row_key, before, after) VALUES
+			(1, 0, 'update', 'song_aliases', '{"id":3}', '{"song_id":2}', '{"song_id":1}'),
+			(2, 0, 'update', 'song_aliases', '{"id":4}', '{"song_id":2}', '{"song_id":1}')`,
+		`INSERT INTO sources (user_id, artist_text, title_text, album_text, msid) VALUES (1, 'a', 'b', '4 million views', 'm1'), (1, 'a', 'b', '4:00 AM', 'm2')`,
+	} {
+		if _, err := raw.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	raw.Close()
+	db, err := Open(ctx, path, filepath.Join(dir, "backups"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var name, under, byline string
+	db.Reader().QueryRow(`SELECT name, other_names, byline FROM songs WHERE id = 1`).Scan(&name, &under, &byline)
+	// The merged file name is hidden, and hidden names never come first.
+	// The undone merge doesn't count, so its name stays shown.
+	if name != "Fukashigi no Carte (lofi)" || under != "Fukashigi no Carte" || byline != "Fukashigi no Carte · 不可思議のカルテ" {
+		t.Fatalf("names %q / %q / %q", name, under, byline)
+	}
+	var jobs int
+	db.Reader().QueryRow(`SELECT count(*) FROM jobs WHERE kind = 'reparse'`).Scan(&jobs)
+	if jobs != 1 {
+		t.Fatalf("%d reparse jobs, want the view count only", jobs)
+	}
+}

@@ -39,9 +39,10 @@ func (p *plan) newSong(name, lang string, langSet int64) (int64, error) {
 		return 0, err
 	}
 	p.add(Change{Op: OpInsert, Table: "songs", After: map[string]any{
-		"id": id, "user_id": p.userID, "name": name, "other_names": "", "pinned_alias": nil, "mbid": nil, "merged_into": nil, "created_at": unix()}})
+		"id": id, "user_id": p.userID, "name": name, "other_names": "", "pinned_alias": nil, "mbid": nil, "merged_into": nil, "created_at": unix(),
+		"second_alias": nil, "second_set": int64(0), "byline": "", "buried_by": nil}})
 	p.add(Change{Op: OpInsert, Table: "song_aliases", After: map[string]any{
-		"id": aliasID, "song_id": id, "name": name, "lang": lang, "lang_set": langSet}})
+		"id": aliasID, "song_id": id, "name": name, "lang": lang, "lang_set": langSet, "shown": int64(1)}})
 	return id, nil
 }
 
@@ -52,13 +53,16 @@ func (db *DB) SplitSong(ctx context.Context, userID, songID int64, recordingIDs 
 	err := db.Write(ctx, func(tx *sql.Tx) error {
 		p := &plan{ctx: ctx, tx: tx, userID: userID}
 		var name string
-		var merged sql.NullInt64
-		err := tx.QueryRowContext(ctx, `SELECT name, merged_into FROM songs WHERE id = ? AND user_id = ?`, songID, userID).Scan(&name, &merged)
+		var merged, buried sql.NullInt64
+		err := tx.QueryRowContext(ctx, `SELECT name, merged_into, buried_by FROM songs WHERE id = ? AND user_id = ?`, songID, userID).Scan(&name, &merged, &buried)
 		if errors.Is(err, sql.ErrNoRows) || merged.Valid {
 			return ErrNotFound
 		}
 		if err != nil {
 			return err
+		}
+		if buried.Valid {
+			return ErrBuried
 		}
 		all, err := ids(ctx, tx, `SELECT id FROM recordings WHERE song_id = ? AND merged_into IS NULL ORDER BY id`, songID)
 		if err != nil {

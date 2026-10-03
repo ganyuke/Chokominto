@@ -222,13 +222,15 @@ Plain links. History pages by date, rankings by 50 rows.
 
 Logged in, song, artist and album pages have two views, like Wikipedia's tabs (owner, 2026-10-01): **Read** (the page itself, at `/album/1`) and **Edit** (at `/album/1/edit`). The tabs sit on the right of the title line, the current one bold, in the `.tabs` style. Visitors see no tabs. The Edit view repeats the title and has plain `h3` subsections, one small form each, so every change is one click with its own Undo: names, labels (in the order set in Settings), the kind-specific details, who gets credit, the picture, names from MusicBrainz, and merging it into another. After a change it stays on the Edit view, with the change and its Undo in the notice.
 
+The names table has a Kind select per name, an "On its page" checkbox column, an "In lists" radio column with "No other name in lists" under it, and one "Save names" button for all three, with "Use as its name" and "Remove" per row. Help text under it says which names show where and that every name, shown or not, links new scrobbles and finds duplicates. Songs have "Credited artists" per recording, albums have "Album artists" and "Songs on it" (checkboxes, "Take checked off this album"). The last section is Graveyard on songs and Delete on artists and albums. Delete says in a sentence what still uses the item, or offers the danger button when nothing does.
+
 - **Inline forms** (`.inline-form`): an input and its button on one line, wrapping on narrow screens. Used where a form has one or two fields, like adding a name.
 - **Lists of removable things** (`ul.plain`): one item per line, each with its own small button after it ("Remove", "Take off").
 | Scrobble | One search box, results table, "Scrobble now" or a time field |
 | Fix listen | Text as received, current link, search to relink, "remember this?", delete |
-| Review | Sections for suggestions, which one, received text (to link several spellings at once), incomplete. Sorted by listens affected, with checkboxes for bulk actions |
+| Review | Sections for suggestions, which one, received text (to link several spellings at once), incomplete, and the graveyard (songs that aren't music, with Bring back and Delete listens). Sorted by listens affected, with checkboxes for bulk actions |
 | Connect an agent | Shown when an agent signs in. What it will reach, look or change as radio buttons, Allow, and a "Don't allow" link back to the agent |
-| Changes | Every merge, deletion and other edit, newest first, with an Undo button each. Called "merge history" in early notes |
+| Changes | Every merge, deletion and other edit, newest first, with an Undo button each. Called "merge history" in early notes. An AI agent's task is one row: its name (or "Changes made together"), the agent, the number of changes, and Undo all, with its changes listed when the row is opened (`details`), each with its own Undo |
 | Settings | Scrobbler tokens, time zone, week start, display name, labels (add, rename, order, hidden by default, delete), reading scrobbles (each reading with an example and a checkbox, one Save that first shows examples from your own listens and asks to confirm, then your own rules), password |
 
 ### Listen history mockup

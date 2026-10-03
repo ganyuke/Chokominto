@@ -142,7 +142,9 @@ func (s *Server) handle(ctx context.Context, req request) (any, *rpcError) {
 				"name":        t.name,
 				"description": t.description,
 				"inputSchema": t.schema(),
-				"annotations": map[string]any{"readOnlyHint": t.readOnly, "destructiveHint": false},
+				// Apps like Claude group tools by these and can ask the owner
+				// before running the ones that delete.
+				"annotations": map[string]any{"readOnlyHint": t.readOnly, "destructiveHint": t.destructive},
 			})
 		}
 		return map[string]any{"tools": list}, nil
@@ -161,7 +163,9 @@ func (s *Server) handle(ctx context.Context, req request) (any, *rpcError) {
 		if len(p.Arguments) == 0 {
 			p.Arguments = json.RawMessage("{}")
 		}
-		out, err := tools[i].run(ctx, s, p.Arguments)
+		// Every change an agent makes joins its open task, so the owner can
+		// undo a whole batch at once.
+		out, err := tools[i].run(store.InAgentTask(ctx), s, p.Arguments)
 		if err != nil {
 			// Tool failures go back to the agent as results, so it can
 			// read them and try something else.

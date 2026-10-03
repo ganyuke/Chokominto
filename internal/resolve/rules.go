@@ -294,6 +294,36 @@ func Undo(ctx context.Context, db *store.DB, userID, editID int64) (int64, error
 	return undoID, err
 }
 
+// UndoTask undoes every change of an agent's task at once, newest first,
+// or none of them when a later change outside it is in the way. Undoing a
+// rule reads the text again, as Undo does. It returns how many changes it
+// undid.
+func UndoTask(ctx context.Context, db *store.DB, userID, taskID int64) (int, error) {
+	var n int
+	err := db.Write(ctx, func(tx *sql.Tx) error {
+		edits, err := store.TaskUndoEdits(ctx, tx, userID, taskID)
+		if err != nil {
+			return err
+		}
+		rules := false
+		for _, id := range edits {
+			ruleID, err := store.RuleEditTx(ctx, tx, id)
+			if err != nil {
+				return err
+			}
+			rules = rules || ruleID != 0
+		}
+		if n, err = store.UndoTaskTx(ctx, tx, userID, taskID, edits); err != nil {
+			return err
+		}
+		if !rules {
+			return nil
+		}
+		return reparseAllTx(ctx, tx, userID)
+	})
+	return n, err
+}
+
 // NewSong splits received text off into a new song of its own, as one
 // edit. Linked text keeps its song's name and artists. Unlinked text is
 // read with the owner's rules, like auto-linking would.

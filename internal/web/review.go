@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
+	"time"
 
 	"chokominto/internal/resolve"
 	"chokominto/internal/store"
@@ -56,7 +57,15 @@ type reviewPage struct {
 	Incomplete      []textRow
 	Query           string
 	Results         []recordingRow
+	Graveyard       []graveRow
 	Empty           bool
+}
+
+type graveRow struct {
+	Song    name
+	Artists []name
+	Listens int
+	Moved   string // when, and by which agent
 }
 
 var kindLabel = map[string]string{"artist": "Artist", "recording": "Song", "release": "Album"}
@@ -199,7 +208,18 @@ func (s *Server) reviewData(r *http.Request, u *store.User) (reviewPage, error) 
 			p.Results = append(p.Results, recordingRow{Rank: i + 1, RecordingID: f.RecordingID, Song: songName(f.Song), Version: f.Version, Artists: artistNames(f.Artists), Listens: f.Listens})
 		}
 	}
-	p.Empty = len(p.Suggestions)+len(p.WhichOne)+p.UnlinkedCount+len(p.Incomplete) == 0
+	graves, err := s.db.Graveyard(ctx, u.ID)
+	if err != nil {
+		return p, err
+	}
+	for _, g := range graves {
+		moved := time.Unix(g.BuriedAt, 0).In(location(*u)).Format("2 Jan 2006")
+		if g.By != "" {
+			moved += " by " + g.By
+		}
+		p.Graveyard = append(p.Graveyard, graveRow{songName(g.Ref), artistNames(g.Artists), g.Listens, moved})
+	}
+	p.Empty = len(p.Suggestions)+len(p.WhichOne)+p.UnlinkedCount+len(p.Incomplete)+len(p.Graveyard) == 0
 	return p, nil
 }
 

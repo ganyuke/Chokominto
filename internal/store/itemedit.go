@@ -35,27 +35,48 @@ type Alias struct {
 	Lang    string // en, romaji or original
 	LangSet bool   // set by the owner, not guessed
 	Pinned  bool
+	Shown   bool // listed on the item's own page
+	InLists bool // shown under the item's name in lists
 }
 
-// Aliases lists an item's names in display order.
+// Aliases lists an item's names in display order. The first is the one
+// it's shown by.
 func (db *DB) Aliases(ctx context.Context, kind string, id int64) ([]Alias, error) {
 	t, ok := itemTables[kind]
 	if !ok {
 		return nil, ErrNotFound
 	}
+	var second sql.NullInt64
+	var secondSet bool
+	if err := db.r.QueryRowContext(ctx, `SELECT second_alias, second_set FROM `+t.entity+` WHERE id = ?`, id).Scan(&second, &secondSet); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
 	rows, err := db.r.QueryContext(ctx, fmt.Sprintf(
-		`SELECT a.id, a.name, a.lang, a.lang_set, coalesce(a.id = e.pinned_alias, 0) FROM %s a JOIN %s e ON e.id = a.%s WHERE a.%s = ?
-		 ORDER BY (a.id = e.pinned_alias) DESC, CASE a.lang WHEN 'en' THEN 0 WHEN 'romaji' THEN 1 ELSE 2 END, a.id`,
+		`SELECT a.id, a.name, a.lang, a.lang_set, coalesce(a.id = e.pinned_alias, 0), a.shown FROM %s a JOIN %s e ON e.id = a.%s WHERE a.%s = ?
+		 ORDER BY (a.id = e.pinned_alias) DESC, a.shown DESC, CASE a.lang WHEN 'en' THEN 0 WHEN 'romaji' THEN 1 ELSE 2 END, a.id`,
 		t.alias, t.entity, t.owner, t.owner), id)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var out []Alias
+	picked := false
 	for rows.Next() {
 		var a Alias
-		if err := rows.Scan(&a.ID, &a.Name, &a.Lang, &a.LangSet, &a.Pinned); err != nil {
+		if err := rows.Scan(&a.ID, &a.Name, &a.Lang, &a.LangSet, &a.Pinned, &a.Shown); err != nil {
 			return nil, err
+		}
+		// The same choice refreshNamesTx makes.
+		if len(out) > 0 && !picked {
+			if secondSet {
+				a.InLists = second.Valid && a.ID == second.Int64
+			} else {
+				a.InLists = a.Shown
+			}
+			picked = a.InLists
 		}
 		out = append(out, a)
 	}
@@ -128,7 +149,8 @@ func (p *plan) pinIfNeeded(kind string, id, aliasID int64, lang string) error {
 		}
 		return p.update(t.entity, id, map[string]any{"pinned_alias": aliasID})
 	}
-	rows, err := queryRows(p.ctx, p.tx, fmt.Sprintf(`SELECT id, lang FROM %s WHERE %s = ? AND id <> ?`, t.alias, t.owner), []string{"id", "lang"}, id, aliasID)
+	// Hidden names come after shown ones, so only shown ones can come first.
+	rows, err := queryRows(p.ctx, p.tx, fmt.Sprintf(`SELECT id, lang FROM %s WHERE %s = ? AND id <> ? AND shown = 1`, t.alias, t.owner), []string{"id", "lang"}, id, aliasID)
 	if err != nil {
 		return err
 	}
@@ -205,7 +227,7 @@ func (db *DB) AddName(ctx context.Context, userID int64, kind string, id int64, 
 		if err != nil {
 			return "", err
 		}
-		p.add(Change{Op: OpInsert, Table: t.alias, After: map[string]any{"id": aid, t.owner: id, "name": name, "lang": lang, "lang_set": int64(0)}})
+		p.add(Change{Op: OpInsert, Table: t.alias, After: map[string]any{"id": aid, t.owner: id, "name": name, "lang": lang, "lang_set": int64(0), "shown": int64(1)}})
 		return fmt.Sprintf("Added the name %s to %s", name, item), nil
 	})
 }
@@ -223,10 +245,15 @@ func (db *DB) RemoveName(ctx context.Context, userID int64, kind string, id, ali
 		if n <= 1 {
 			return "", ErrLastName
 		}
-		var pinned sql.NullInt64
-		p.tx.QueryRowContext(p.ctx, `SELECT pinned_alias FROM `+t.entity+` WHERE id = ?`, id).Scan(&pinned)
+		var pinned, second sql.NullInt64
+		p.tx.QueryRowContext(p.ctx, `SELECT pinned_alias, second_alias FROM `+t.entity+` WHERE id = ?`, id).Scan(&pinned, &second)
 		if pinned.Valid && pinned.Int64 == aliasID {
 			if err := p.update(t.entity, id, map[string]any{"pinned_alias": nil}); err != nil {
+				return "", err
+			}
+		}
+		if second.Valid && second.Int64 == aliasID {
+			if err := p.update(t.entity, id, map[string]any{"second_alias": nil, "second_set": int64(0)}); err != nil {
 				return "", err
 			}
 		}
@@ -253,6 +280,108 @@ func (db *DB) SetNameLang(ctx context.Context, userID int64, kind string, id, al
 			return "", err
 		}
 		return fmt.Sprintf("Marked %s as %s", row["name"], langNames[lang]), nil
+	})
+}
+
+// NameChoice is how one of an item's names is shown: its kind (en,
+// romaji or original) and whether it's listed on the item's own page.
+type NameChoice struct {
+	AliasID int64
+	Lang    string
+	Shown   bool
+}
+
+// NamesChange is what SetNames changes. Names left out stay as they are.
+type NamesChange struct {
+	Names []NameChoice
+	// InLists is the name shown under the item's name in lists, 0 for
+	// none, or nil to leave it.
+	InLists *int64
+	// First is the name to show the item by, 0 to leave it.
+	First int64
+}
+
+// SetNames changes how an item's names are shown, as one edit. Every name
+// still recognizes scrobbles and finds duplicates, shown or not.
+func (db *DB) SetNames(ctx context.Context, userID int64, kind string, id int64, ch NamesChange) (int64, error) {
+	t, ok := itemTables[kind]
+	if !ok {
+		return 0, ErrNotFound
+	}
+	current, err := db.Aliases(ctx, kind, id)
+	if err != nil {
+		return 0, err
+	}
+	byID := map[int64]Alias{}
+	var inLists int64
+	for _, a := range current {
+		byID[a.ID] = a
+		if a.InLists {
+			inLists = a.ID
+		}
+	}
+	return db.editItem(ctx, userID, kind, id, func(p *plan, item string) (string, error) {
+		var said []string
+		for _, n := range ch.Names {
+			a, ok := byID[n.AliasID]
+			if !ok {
+				return "", ErrNotFound
+			}
+			after := map[string]any{}
+			if n.Lang != "" && n.Lang != a.Lang {
+				if _, ok := langNames[n.Lang]; !ok {
+					return "", ErrValue
+				}
+				after["lang"], after["lang_set"] = n.Lang, int64(1)
+				said = append(said, fmt.Sprintf("marked %s as %s", a.Name, langNames[n.Lang]))
+			}
+			if n.Shown != a.Shown {
+				after["shown"] = boolInt(n.Shown)
+				if n.Shown {
+					said = append(said, fmt.Sprintf("listed %s on its page", a.Name))
+				} else {
+					said = append(said, fmt.Sprintf("stopped listing %s on its page", a.Name))
+				}
+			}
+			if len(after) > 0 {
+				if err := p.update(t.alias, a.ID, after); err != nil {
+					return "", err
+				}
+			}
+		}
+		if ch.InLists != nil && *ch.InLists != inLists {
+			v := any(nil)
+			if *ch.InLists != 0 {
+				a, ok := byID[*ch.InLists]
+				if !ok {
+					return "", ErrNotFound
+				}
+				v = a.ID
+				said = append(said, fmt.Sprintf("showed %s under its name in lists", a.Name))
+			} else {
+				said = append(said, "showed no other name under it in lists")
+			}
+			if err := p.update(t.entity, id, map[string]any{"second_alias": v, "second_set": int64(1)}); err != nil {
+				return "", err
+			}
+		}
+		if ch.First != 0 && ch.First != current[0].ID {
+			a, ok := byID[ch.First]
+			if !ok {
+				return "", ErrNotFound
+			}
+			if err := p.update(t.entity, id, map[string]any{"pinned_alias": a.ID}); err != nil {
+				return "", err
+			}
+			said = append(said, "showed it as "+a.Name)
+		}
+		if len(said) == 0 {
+			return "", nil
+		}
+		if len(said) > 3 {
+			return fmt.Sprintf("Changed how the names of %s are shown", item), nil
+		}
+		return fmt.Sprintf("On %s, %s", item, strings.Join(said, ", ")), nil
 	})
 }
 
@@ -789,7 +918,12 @@ func (db *DB) SearchItems(ctx context.Context, userID int64, kind string, q stri
 	}
 	like := "%" + escapeLike(key) + "%"
 	romaji := "%" + escapeLike(names.FoldLongVowels(key)) + "%"
-	return db.refs(ctx, fmt.Sprintf(`SELECT e.id, e.name, e.other_names FROM %s e WHERE e.user_id = ? AND e.merged_into IS NULL
+	// Songs in the graveyard aren't offered.
+	live := "e.merged_into IS NULL"
+	if kind == "song" {
+		live += " AND e.buried_by IS NULL"
+	}
+	return db.refs(ctx, fmt.Sprintf(`SELECT e.id, e.name, e.other_names FROM %s e WHERE e.user_id = ? AND `+live+`
 		AND e.id IN (SELECT %s FROM %s WHERE match_key LIKE ?2 ESCAPE '\' OR romaji_key LIKE ?3 ESCAPE '\' OR guess_key LIKE ?3 ESCAPE '\')
 		ORDER BY e.name LIMIT ?4`, t.entity, t.owner, t.alias), userID, like, romaji, limit)
 }
@@ -864,7 +998,7 @@ func (db *DB) ImportNames(ctx context.Context, userID int64, kind string, id int
 			if err != nil {
 				return "", err
 			}
-			p.add(Change{Op: OpInsert, Table: t.alias, After: map[string]any{"id": aid, t.owner: id, "name": name, "lang": lang, "lang_set": set}})
+			p.add(Change{Op: OpInsert, Table: t.alias, After: map[string]any{"id": aid, t.owner: id, "name": name, "lang": lang, "lang_set": set, "shown": int64(1)}})
 			added++
 		}
 		for _, l := range links {

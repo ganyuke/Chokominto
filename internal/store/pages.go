@@ -79,8 +79,9 @@ func (db *DB) ReleaseRefs(ctx context.Context, ids []int64) (map[int64]Ref, erro
 	return out, err
 }
 
-// Entity looks up a named entity the user owns. When it was merged into
-// another, MergedInto is that one's id.
+// Entity looks up a named entity the user owns, for its own page: its
+// OtherNames are the names listed there. When it was merged into another,
+// MergedInto is that one's id.
 type Entity struct {
 	Ref
 	MergedInto int64
@@ -92,7 +93,7 @@ func (db *DB) Entity(ctx context.Context, userID int64, kind string, id int64) (
 	var e Entity
 	var merged sql.NullInt64
 	err := db.r.QueryRowContext(ctx,
-		`SELECT id, name, other_names, merged_into FROM `+entityTables[kind]+` WHERE id = ? AND user_id = ?`, id, userID).
+		`SELECT id, name, byline, merged_into FROM `+entityTables[kind]+` WHERE id = ? AND user_id = ?`, id, userID).
 		Scan(&e.ID, &e.Name, &e.OtherNames, &merged)
 	if errors.Is(err, sql.ErrNoRows) {
 		return e, ErrNotFound
@@ -260,6 +261,27 @@ func (db *DB) EntityListenCount(ctx context.Context, userID int64, kind string, 
 	}
 	var n int
 	err := db.r.QueryRowContext(ctx, q, userID, id).Scan(&n)
+	return n, err
+}
+
+// EntityListenCountIn is the number of listens of an artist (counting their
+// groups' too), song or release in [from, to), from the same totals the
+// rankings use.
+func (db *DB) EntityListenCountIn(ctx context.Context, userID int64, kind string, id, from, to int64) (int, error) {
+	var where string
+	switch kind {
+	case "artist":
+		where = `recording_id IN (SELECT recording_id FROM recording_artists WHERE artist_id = ?)`
+	case "song":
+		where = `recording_id IN (SELECT id FROM recordings WHERE song_id = ?)`
+	case "release":
+		where = `release_id = ?`
+	default:
+		return 0, ErrNotFound
+	}
+	pc, args := periodCounts(userID, from, to)
+	var n int
+	err := db.r.QueryRowContext(ctx, `WITH `+pc+` SELECT coalesce(sum(n), 0) FROM pc WHERE `+where, append(args, id)...).Scan(&n)
 	return n, err
 }
 

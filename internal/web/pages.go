@@ -254,6 +254,7 @@ var notices = map[string]string{
 	"password":         "Password changed. You've been logged out everywhere else.",
 	"undone":           "Undone.",
 	"already":          "That change was already undone.",
+	"task-undone":      "Undone, all of it.",
 	"scrobbled":        "Scrobbled.",
 	"label":            "Label saved.",
 	"unlabeled":        "Label deleted.",
@@ -498,8 +499,26 @@ type editRow struct {
 	Agent   string // the agent token's name, when an AI agent made it
 }
 
+// taskRow is an agent's task on Changes: one row for all its edits, with
+// Undo all.
+type taskRow struct {
+	ID     int64
+	When   string
+	Name   string // "" when the agent didn't name it
+	Agent  string
+	Undone bool
+	Edits  []editRow
+}
+
+// changeRow is one row of Changes: an edit, or a task.
+type changeRow struct {
+	editRow
+	Task *taskRow
+}
+
 type changesPage struct {
 	Page
+	Rows     []changeRow
 	Edits    []editRow
 	Conflict []string
 	Newer    string
@@ -507,15 +526,50 @@ type changesPage struct {
 }
 
 func (s *Server) changesData(r *http.Request, u *store.User) (changesPage, error) {
-	p := changesPage{Page: Page{Title: "Changes", Nav: "changes", User: u, Notice: notices[r.URL.Query().Get("notice")]}}
+	p := changesPage{Page: Page{Title: "Changes", Nav: "changes", User: u}}
+	s.doneNotice(r, u, &p.Page)
 	before, _ := strconv.ParseInt(r.URL.Query().Get("before"), 10, 64)
 	es, err := s.db.Edits(r.Context(), u.ID, before, changesPageSize)
 	if err != nil {
 		return p, err
 	}
 	loc := location(*u)
+	row := func(e store.Edit) editRow {
+		return editRow{e.ID, time.Unix(e.CreatedAt, 0).In(loc).Format("2 Jan 2006, 15:04"), e.Summary, e.UndoneAt.Valid, e.Agent}
+	}
+	var taskIDs []int64
 	for _, e := range es {
-		p.Edits = append(p.Edits, editRow{e.ID, time.Unix(e.CreatedAt, 0).In(loc).Format("2 Jan 2006, 15:04"), e.Summary, e.UndoneAt.Valid, e.Agent})
+		taskIDs = append(taskIDs, e.TaskID)
+	}
+	tasks, err := s.db.Tasks(r.Context(), u.ID, taskIDs)
+	if err != nil {
+		return p, err
+	}
+	// A task is shown once, where its newest edit is, with all its edits.
+	shown := map[int64]bool{}
+	for _, e := range es {
+		p.Edits = append(p.Edits, row(e))
+		t, ok := tasks[e.TaskID]
+		if !ok {
+			p.Rows = append(p.Rows, changeRow{editRow: row(e)})
+			continue
+		}
+		if shown[t.ID] {
+			continue
+		}
+		shown[t.ID] = true
+		if t.Newest != e.ID {
+			continue // its newest edit is on a newer page
+		}
+		edits, err := s.db.TaskEdits(r.Context(), u.ID, t.ID)
+		if err != nil {
+			return p, err
+		}
+		tr := &taskRow{ID: t.ID, When: row(e).When, Name: t.Name, Agent: t.Agent, Undone: t.UndoneAt.Valid}
+		for _, te := range edits {
+			tr.Edits = append(tr.Edits, row(te))
+		}
+		p.Rows = append(p.Rows, changeRow{Task: tr})
 	}
 	if before > 0 {
 		p.Newer = "/changes"
@@ -572,17 +626,55 @@ func (s *Server) undo(w http.ResponseWriter, r *http.Request, u *store.User) {
 		p.Error = "This can't be undone anymore. What it changed has been changed again since."
 		s.render(w, http.StatusConflict, "changes", p)
 	case errors.As(err, &conflict):
+		s.undoConflict(w, r, u, conflict)
+	default:
+		s.serverError(w, r, err)
+	}
+}
+
+// undoConflict shows Changes with the later edits that block an undo.
+func (s *Server) undoConflict(w http.ResponseWriter, r *http.Request, u *store.User, conflict *store.ConflictError) {
+	p, err := s.changesData(r, u)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	p.Conflict, err = s.db.EditSummaries(r.Context(), u.ID, conflict.Later)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	s.render(w, http.StatusConflict, "changes", p)
+}
+
+// undoTask undoes all of an agent's task, or nothing.
+func (s *Server) undoTask(w http.ResponseWriter, r *http.Request, u *store.User) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		s.notFound(w, r)
+		return
+	}
+	n, err := resolve.UndoTask(r.Context(), s.db, u.ID, id)
+	var conflict *store.ConflictError
+	switch {
+	case err == nil:
+		s.log.Info("task undone", "user", u.Name, "task", id, "edits", n)
+		http.Redirect(w, r, "/changes?notice=task-undone", http.StatusSeeOther)
+	case errors.Is(err, store.ErrAlreadyUndone):
+		http.Redirect(w, r, "/changes?notice=already", http.StatusSeeOther)
+	case errors.Is(err, store.ErrNotFound):
+		s.notFound(w, r)
+	case errors.Is(err, store.ErrStale):
 		p, err := s.changesData(r, u)
 		if err != nil {
 			s.serverError(w, r, err)
 			return
 		}
-		p.Conflict, err = s.db.EditSummaries(r.Context(), u.ID, conflict.Later)
-		if err != nil {
-			s.serverError(w, r, err)
-			return
-		}
+		p.Notice = ""
+		p.Error = "This can't be undone anymore. What it changed has been changed again since."
 		s.render(w, http.StatusConflict, "changes", p)
+	case errors.As(err, &conflict):
+		s.undoConflict(w, r, u, conflict)
 	default:
 		s.serverError(w, r, err)
 	}

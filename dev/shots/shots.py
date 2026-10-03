@@ -12,6 +12,7 @@
 #     playing:<artist>=<title>=<album>  tell the server what's playing now
 #     wait:<seconds>            let the page update itself
 #     connect:<name>=<redirect> an agent registers and asks to connect
+#     mcp:<tool>=<json args>    an agent (chokominto mcp) calls a tool
 #   A path with "#id" is cropped to that section, from its heading to the
 #   next h2. Screenshots are written to /out/00.png, 01.png, ...
 #
@@ -90,6 +91,11 @@ with sync_playwright() as p:
                 q = urllib.parse.urlencode({"response_type": "code", "client_id": client, "redirect_uri": val, "state": "s",
                     "code_challenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGrSstw-cM", "code_challenge_method": "S256"})
                 page.goto(URL + "/oauth/authorize?" + q)
+            elif kind == "mcp":
+                msgs = [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "shots", "version": "1"}}},
+                        {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": sel, "arguments": json.loads(val or "{}")}}]
+                subprocess.run([BIN, "mcp"], env=env, input="".join(json.dumps(m) + "\n" for m in msgs), capture_output=True, text=True, check=True)
+                page.reload()
             elif kind == "wait":
                 page.wait_for_timeout(float(rest) * 1000)
             else:

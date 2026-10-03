@@ -112,7 +112,7 @@
 {{end}}
 
 <h2 id="names">Other names</h2>
-<p>Songs, artists and albums can have more than one name, like a romaji and an original-script title. Pages show the main one. You can also show the others, on a line under it.</p>
+<p>Songs, artists and albums can have more than one name, like a romaji and an original-script title. Pages show the main one. You can also show others: one under each name in tables and rankings, and a list under the title on its own page. Choose which on its Edit tab.</p>
 <form method="post" action="/settings/names">
 {{if .User.ShowOtherNames}}<input type="hidden" name="on" value="0"><button type="submit">Hide other names</button>
 {{else}}<input type="hidden" name="on" value="1"><button type="submit">Show other names</button>{{end}}

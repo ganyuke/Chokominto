@@ -20,10 +20,10 @@ var editable = map[string]map[string]bool{
 	"listens":           {"deleted_by": true},
 	"sources":           {"recording_id": true, "release_id": true, "linked_by": true},
 	"labels":            {"name": true, "hide_default": true, "position": true},
-	"artists":           {"kind": true, "pinned_alias": true, "mbid": true, "merged_into": true, "artwork_id": true, "artwork_pinned": true},
-	"songs":             {"pinned_alias": true, "mbid": true, "merged_into": true},
+	"artists":           {"kind": true, "pinned_alias": true, "second_alias": true, "second_set": true, "mbid": true, "merged_into": true, "artwork_id": true, "artwork_pinned": true},
+	"songs":             {"pinned_alias": true, "second_alias": true, "second_set": true, "mbid": true, "merged_into": true, "buried_by": true},
 	"recordings":        {"song_id": true, "version": true, "is_original": true, "rank_alone": true, "mbid": true, "merged_into": true},
-	"releases":          {"pinned_alias": true, "kind": true, "context": true, "released": true, "mbid": true, "merged_into": true, "artwork_id": true, "artwork_pinned": true},
+	"releases":          {"pinned_alias": true, "second_alias": true, "second_set": true, "kind": true, "context": true, "released": true, "mbid": true, "merged_into": true, "artwork_id": true, "artwork_pinned": true},
 	"artist_aliases":    aliasColumns("artist_id"),
 	"song_aliases":      aliasColumns("song_id"),
 	"release_aliases":   aliasColumns("release_id"),
@@ -37,7 +37,7 @@ var editable = map[string]map[string]bool{
 }
 
 func aliasColumns(owner string) map[string]bool {
-	return map[string]bool{owner: true, "name": true, "lang": true, "lang_set": true}
+	return map[string]bool{owner: true, "name": true, "lang": true, "lang_set": true, "shown": true}
 }
 
 // wholeRows lists the tables whose rows can be added and removed, with
@@ -58,8 +58,15 @@ var wholeRows = map[string]rowShape{
 	"release_tracks":    {key: []string{"release_id", "recording_id"}, cols: []string{"release_id", "recording_id", "disc", "position"}},
 	"credit_overrides":  {key: []string{"scope", "scope_id", "from_id", "to_id"}, cols: []string{"scope", "scope_id", "from_id", "to_id"}},
 	// New songs and recordings, from splitting a song or "New song" on the
-	// Fix page. A song's name and other_names are cached from its aliases.
-	"songs": {key: []string{"id"}, cols: []string{"id", "user_id", "name", "other_names", "pinned_alias", "mbid", "merged_into", "created_at"}},
+	// Fix page. A song's name, other_names and byline are cached from its
+	// aliases. Artists are added when credited by hand, and artists and
+	// albums nothing uses can be deleted.
+	"songs": {key: []string{"id"}, cols: []string{"id", "user_id", "name", "other_names", "pinned_alias", "mbid", "merged_into", "created_at",
+		"second_alias", "second_set", "byline", "buried_by"}},
+	"artists": {key: []string{"id"}, cols: []string{"id", "user_id", "kind", "name", "other_names", "pinned_alias", "mbid", "merged_into", "created_at",
+		"artwork_id", "artwork_pinned", "second_alias", "second_set", "byline"}},
+	"releases": {key: []string{"id"}, cols: []string{"id", "user_id", "name", "other_names", "pinned_alias", "kind", "context", "released", "mbid",
+		"merged_into", "created_at", "artwork_id", "artwork_pinned", "second_alias", "second_set", "byline"}},
 	"recordings": {key: []string{"id"}, cols: []string{"id", "user_id", "song_id", "version", "is_original", "rank_alone", "duration_ms", "mbid",
 		"merged_into", "created_at"}},
 	"rules": {key: []string{"id"}, cols: []string{"id", "user_id", "kind", "field", "artist_match", "title_match", "album_match",
@@ -70,7 +77,7 @@ var wholeRows = map[string]rowShape{
 // than logged. A key guessed differently by a later version never makes an
 // undo stale.
 func aliasShape(owner string) rowShape {
-	return rowShape{key: []string{"id"}, cols: []string{"id", owner, "name", "lang", "lang_set"},
+	return rowShape{key: []string{"id"}, cols: []string{"id", owner, "name", "lang", "lang_set", "shown"},
 		derived: []string{"match_key", "romaji_key", "guess_key"}}
 }
 
@@ -136,6 +143,7 @@ type Edit struct {
 	CreatedAt int64
 	UndoneAt  sql.NullInt64
 	Agent     string // the agent token's label, when an AI agent made it
+	TaskID    int64  // the agent task it's part of, or 0
 }
 
 var (
@@ -207,9 +215,13 @@ func OpenEditTx(ctx context.Context, tx *sql.Tx, userID int64, m EditMeta) (*Ope
 func openEdit(ctx context.Context, tx *sql.Tx, userID int64, m EditMeta, undoes sql.NullInt64) (*OpenEdit, error) {
 	e := &OpenEdit{ctx: ctx, tx: tx, w: newDerivedWork()}
 	agent, _ := ctx.Value(agentKey{}).(int64)
-	err := tx.QueryRowContext(ctx,
-		`INSERT INTO edits (user_id, kind, summary, automatic, rule_id, undoes, created_at, agent_token_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
-		userID, m.Kind, m.Summary, m.Automatic, nullID(m.RuleID), undoes, unix(), nullID(agent)).Scan(&e.ID)
+	task, err := editTaskTx(ctx, tx, userID, m)
+	if err != nil {
+		return nil, err
+	}
+	err = tx.QueryRowContext(ctx,
+		`INSERT INTO edits (user_id, kind, summary, automatic, rule_id, undoes, created_at, agent_token_id, task_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+		userID, m.Kind, m.Summary, m.Automatic, nullID(m.RuleID), undoes, unix(), nullID(agent), task).Scan(&e.ID)
 	return e, err
 }
 
@@ -685,10 +697,13 @@ func (db *DB) Edits(ctx context.Context, userID, beforeID int64, limit int) ([]E
 	if beforeID <= 0 {
 		beforeID = 1<<63 - 1
 	}
+	return db.scanEdits(ctx, `WHERE e.user_id = ? AND e.id < ? AND e.automatic = 0 ORDER BY e.id DESC LIMIT ?`, userID, beforeID, limit)
+}
+
+func (db *DB) scanEdits(ctx context.Context, where string, args ...any) ([]Edit, error) {
 	rows, err := db.r.QueryContext(ctx,
-		`SELECT e.id, e.kind, e.summary, e.automatic, e.undoes, e.created_at, e.undone_at, coalesce(t.label, '') FROM edits e
-		 LEFT JOIN api_tokens t ON t.id = e.agent_token_id
-		 WHERE e.user_id = ? AND e.id < ? AND e.automatic = 0 ORDER BY e.id DESC LIMIT ?`, userID, beforeID, limit)
+		`SELECT e.id, e.kind, e.summary, e.automatic, e.undoes, e.created_at, e.undone_at, coalesce(t.label, ''), coalesce(e.task_id, 0) FROM edits e
+		 LEFT JOIN api_tokens t ON t.id = e.agent_token_id `+where, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -696,7 +711,7 @@ func (db *DB) Edits(ctx context.Context, userID, beforeID int64, limit int) ([]E
 	var es []Edit
 	for rows.Next() {
 		var e Edit
-		if err := rows.Scan(&e.ID, &e.Kind, &e.Summary, &e.Automatic, &e.Undoes, &e.CreatedAt, &e.UndoneAt, &e.Agent); err != nil {
+		if err := rows.Scan(&e.ID, &e.Kind, &e.Summary, &e.Automatic, &e.Undoes, &e.CreatedAt, &e.UndoneAt, &e.Agent, &e.TaskID); err != nil {
 			return nil, err
 		}
 		es = append(es, e)

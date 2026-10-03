@@ -1,6 +1,7 @@
 package web
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -112,5 +113,61 @@ func TestAgentsOverHTTP(t *testing.T) {
 	}
 	if code, _ := e.mcpPost(change, search); code != http.StatusUnauthorized {
 		t.Fatalf("revoked: %d", code)
+	}
+}
+
+func TestUndoAgentTask(t *testing.T) {
+	e := newEnv(t, true)
+	e.login()
+	e.scrobbleNow([3]string{"YURiKA", "鏡面の波", ""}, [3]string{"YURiKA", "Kyoumen no Nami", ""})
+	token := e.newAgentToken("Claude", true)
+	songs, _ := e.db.SearchItems(t.Context(), e.userID, "song", "nami", 5)
+	if len(songs) != 2 {
+		t.Fatalf("songs %v", songs)
+	}
+	call := func(name, args string) string {
+		_, body := e.mcpPost(token, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"`+name+`","arguments":`+args+`}}`)
+		return body
+	}
+	call("start_task", `{"name":"Merge spellings"}`)
+	call("merge", fmt.Sprintf(`{"kind":"song","from_id":%d,"into_id":%d}`, songs[1].ID, songs[0].ID))
+	call("add_name", fmt.Sprintf(`{"kind":"song","id":%d,"name":"Mirror Waves"}`, songs[0].ID))
+
+	_, body, _ := e.get("/changes")
+	if !strings.Contains(body, "Merge spellings <span class=\"muted\">(by Claude)</span> <span class=\"muted\">· 2 changes</span>") {
+		t.Fatalf("changes:\n%s", body)
+	}
+	m := regexp.MustCompile(`action="(/changes/tasks/\d+/undo)"`).FindStringSubmatch(body)
+	if m == nil {
+		t.Fatal("no Undo all")
+	}
+
+	// The owner removed the agent's name since: nothing is undone.
+	as, _ := e.db.Aliases(t.Context(), "song", songs[0].ID)
+	for _, a := range as {
+		if a.Name == "Mirror Waves" {
+			e.post(fmt.Sprintf("/song/%d/edit", songs[0].ID), url.Values{"do": {"remove-name"}, "alias": {fmt.Sprint(a.ID)}})
+		}
+	}
+	code, body, _ := e.post(m[1], nil)
+	if code != http.StatusConflict || !strings.Contains(body, "Nothing was undone") || !strings.Contains(body, "Removed the name Mirror Waves") {
+		t.Fatalf("conflict: %d\n%s", code, body)
+	}
+	if e2, _ := e.db.Entity(t.Context(), e.userID, "song", songs[1].ID); e2.MergedInto == 0 {
+		t.Fatal("partly undone")
+	}
+	// After undoing that, Undo all works.
+	_, body, _ = e.get("/changes")
+	rename := regexp.MustCompile(`action="(/changes/\d+/undo)"`).FindStringSubmatch(body)
+	e.post(rename[1], nil)
+	if code, _, h := e.post(m[1], nil); code != http.StatusSeeOther || !strings.Contains(h.Get("Location"), "task-undone") {
+		t.Fatalf("undo all: %d %s", code, h.Get("Location"))
+	}
+	if e2, _ := e.db.Entity(t.Context(), e.userID, "song", songs[1].ID); e2.MergedInto != 0 {
+		t.Fatal("merge not undone")
+	}
+	// It stays one row, with its own two changes, now undone.
+	if _, body, _ = e.get("/changes"); !strings.Contains(body, "· 2 changes") || strings.Contains(body, "Undo: Merged") {
+		t.Fatalf("after undo all:\n%s", body)
 	}
 }

@@ -147,6 +147,7 @@ func New(cfg config.Config, db *store.DB, np *listenbrainz.NowPlaying, log *slog
 	mux.HandleFunc("POST /review/link", s.member(s.reviewLink))
 	mux.HandleFunc("GET /changes", s.member(s.changes))
 	mux.HandleFunc("POST /changes/{id}/undo", s.member(s.undo))
+	mux.HandleFunc("POST /changes/tasks/{id}/undo", s.member(s.undoTask))
 	mux.HandleFunc("/", s.notFound)
 
 	cop := http.NewCrossOriginProtection()

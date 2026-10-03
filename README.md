@@ -117,6 +117,12 @@ Every listen has a Fix link when you're logged in. It shows exactly what your sc
 
 Review lists songs, artists and albums that look like duplicates, biggest first. Tick several and answer them in one go. Artist, song and album pages have an Edit tab for names, labels, credits and merging.
 
+On the Edit tab, choose which other names are listed on the page and which one shows under the name in tables. Names you don't show still link new scrobbles and find duplicates, so keep the odd spellings players sent and just hide them. Merging hides the merged names for you.
+
+When a scrobbler got the artist wrong, like a YouTube channel or the voice actor in place of the character, credit the right one on the song's Edit tab. When songs ended up on an album that isn't one, like "4:00 AM", take them off on the album's Edit tab. An artist or album nothing uses anymore can then be deleted at the bottom of its Edit tab.
+
+Something that isn't music, like a video, can go to the graveyard from the bottom of its song's Edit tab. Its listens stop counting but are kept, and later listens of it go there too. The graveyard is at the end of Review, where you bring songs back or delete their listens.
+
 Settings lists every way Chokominto reads what your scrobblers send, with an example for each: splitting artist lists, character credits, titles in two languages, versions like instrumentals. Turn any of them on or off, and your listens are read again in the background, except the ones you linked by hand. Your own remembered rules are listed there too.
 
 Every change can be undone from the notice that confirms it, or later from the Changes page. That includes deleted listens (for example ones deleted from Pano Scrobbler).
@@ -133,7 +139,13 @@ The Edit tab on artist, song and album pages has a "Get names from MusicBrainz" 
 
 ### Let an AI agent help
 
-An AI agent like Claude Code can help you tidy up: find every spelling of a song, merge the duplicates, name the versions, and link what isn't linked yet. It sees your songs, artists, albums, what your scrobblers sent and the Review list. Every change it makes shows up on the Changes page, marked with the agent's name, and can be undone there.
+An AI agent like Claude Code can help you tidy up: find every spelling of a song, merge the duplicates, name the versions, choose which names show, fix wrong credits, and link what isn't linked yet. It sees your songs, artists, albums, what your scrobblers sent and the Review list, and can answer suggested merges there for you. Every change it makes shows up on the Changes page, marked with the agent's name, and can be undone there.
+
+It can also answer questions about your listening, like "what did I play most in September?" or "how much Mili did I listen to this year?", by reading your rankings and history. Weeks, months and years are counted in your time zone, the same as the ranking pages.
+
+An agent's changes are grouped into tasks, like "Tidy Fukashigi no Carte", each one row on the Changes page. Open it to see every change, and Undo all puts the whole task back at once. If you changed the same things yourself since, nothing is undone and Changes shows which of your changes are in the way.
+
+An agent can also delete artists and albums nothing uses and move songs to the graveyard. Apps like Claude list those apart from the rest and can ask you before each one. Only you can delete listens in the graveyard.
 
 Give the agent the address of your Chokominto with `/mcp` at the end, like `https://music.example.org/mcp`. In the Claude app, that's under Settings, Connectors, Add custom connector. The agent then opens a page on your Chokominto where you log in and choose whether it can change things or only look. Agents like the Claude app connect from the internet, so your Chokominto needs to be reachable from outside first (see [Reaching it from outside](#reaching-it-from-outside)).
 

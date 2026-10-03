@@ -133,40 +133,68 @@ func AddAliasTx(ctx context.Context, tx *sql.Tx, table string, ownerID int64, na
 	return refreshNamesTx(ctx, tx, table, ownerID)
 }
 
-// refreshNamesTx recomputes an entity's cached primary and other names: the
-// pinned alias first, then English, romaji, original script.
+// refreshNamesTx recomputes an entity's cached names from its aliases, in
+// display order (the pinned alias first, then English, romaji, original
+// script): name is the first, byline the shown ones after it for the
+// item's own page, and other_names the one shown under it in lists.
 func refreshNamesTx(ctx context.Context, tx *sql.Tx, table string, ownerID int64) error {
 	t := aliasTables[table]
+	var second sql.NullInt64
+	var secondSet bool
+	err := tx.QueryRowContext(ctx, `SELECT second_alias, second_set FROM `+t.entity+` WHERE id = ?`, ownerID).Scan(&second, &secondSet)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil // removed by the same edit
+	}
+	if err != nil {
+		return err
+	}
 	rows, err := tx.QueryContext(ctx, fmt.Sprintf(
-		`SELECT a.name FROM %s a JOIN %s e ON e.id = a.%s WHERE a.%s = ?
-		 ORDER BY (a.id = e.pinned_alias) DESC,
+		`SELECT a.id, a.name, a.shown FROM %s a JOIN %s e ON e.id = a.%s WHERE a.%s = ?
+		 ORDER BY (a.id = e.pinned_alias) DESC, a.shown DESC,
 		          CASE a.lang WHEN 'en' THEN 0 WHEN 'romaji' THEN 1 ELSE 2 END, a.id`,
 		table, t.entity, t.owner, t.owner), ownerID)
 	if err != nil {
 		return err
 	}
-	var all []string
+	type alias struct {
+		id    int64
+		name  string
+		shown bool
+	}
+	var all []alias
 	for rows.Next() {
-		var n string
-		if err := rows.Scan(&n); err != nil {
+		var a alias
+		if err := rows.Scan(&a.id, &a.name, &a.shown); err != nil {
 			rows.Close()
 			return err
 		}
-		all = append(all, n)
+		all = append(all, a)
 	}
 	rows.Close()
 	if len(all) == 0 {
 		return nil
 	}
-	_, err = tx.ExecContext(ctx, fmt.Sprintf(`UPDATE %s SET name = ?, other_names = ? WHERE id = ?`, t.entity),
-		all[0], strings.Join(all[1:], " "), ownerID)
+	var byline []string
+	under := ""
+	for _, a := range all[1:] {
+		if a.shown {
+			byline = append(byline, a.name)
+			if under == "" && !secondSet {
+				under = a.name
+			}
+		}
+		if secondSet && second.Valid && a.id == second.Int64 {
+			under = a.name
+		}
+	}
+	_, err = tx.ExecContext(ctx, fmt.Sprintf(`UPDATE %s SET name = ?, other_names = ?, byline = ? WHERE id = ?`, t.entity),
+		all[0].name, under, strings.Join(byline, NameSeparator), ownerID)
 	return err
 }
 
-// Artists
+// NameSeparator goes between names listed on one line.
+const NameSeparator = " · "
 
-// FindArtistTx finds a user's artist by a name's match key. When several
-// share it, the oldest wins, so results are stable.
 func FindArtistTx(ctx context.Context, tx *sql.Tx, userID int64, name string) (int64, error) {
 	var id int64
 	err := tx.QueryRowContext(ctx,

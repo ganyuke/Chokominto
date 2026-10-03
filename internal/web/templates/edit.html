@@ -1,11 +1,5 @@
 {{define "view-tabs"}}{{with .}}<nav class="tabs view-tabs" aria-label="View">{{range $i, $t := .}}{{if $i}}<span class="sep" aria-hidden="true">│</span>{{end}}<a href="{{$t.Href}}"{{if $t.Current}} aria-current="page"{{end}}>{{$t.Label}}</a>{{end}}</nav>{{end}}{{end}}
 
-{{define "lang-select"}}<select name="lang" aria-label="Kind of name">
-<option value="en"{{if eq . "en"}} selected{{end}}>English</option>
-<option value="romaji"{{if eq . "romaji"}} selected{{end}}>Romaji</option>
-<option value="original"{{if eq . "original"}} selected{{end}}>Original script</option>
-</select>{{end}}
-
 {{define "version-form"}}<form class="inline" method="post" action="{{.Path}}/edit"><input type="hidden" name="do" value="version"><input type="hidden" name="recording" value="{{.Recording.ID}}"><input type="text" name="version" value="{{.Recording.Version}}" placeholder="Like TV size" aria-label="Version"> <button type="submit">Save</button></form>{{end}}
 
 {{define "edit"}}
@@ -21,19 +15,30 @@
 <p class="help">Listens already linked stay with this {{.Noun}}.</p>
 
 <h3>All names</h3>
+<form id="names" method="post" action="{{.Path}}/edit"><input type="hidden" name="do" value="names"></form>
 <div class="table-scroll">
 <table class="table">
-<thead><tr><th scope="col" class="fill">Name</th><th scope="col">Kind</th><th scope="col" class="action"><span class="muted">Action</span></th></tr></thead>
+<thead><tr><th scope="col" class="fill">Name</th><th scope="col">Kind</th><th scope="col" class="check">On its page</th><th scope="col" class="check">In lists</th><th scope="col" class="action"><span class="muted">Action</span></th></tr></thead>
 <tbody>
 {{$path := .Path}}{{$n := len .Aliases}}
 {{range $i, $a := .Aliases}}<tr>
-<td class="fill">{{.Name}}{{if .Pinned}} <span class="muted">(shown first)</span>{{end}}</td>
-<td><form class="inline" method="post" action="{{$path}}/edit"><input type="hidden" name="do" value="name-lang"><input type="hidden" name="alias" value="{{.ID}}">{{template "lang-select" .Lang}} <button type="submit">Save</button></form></td>
-<td class="action">{{if $i}}<form class="inline" method="post" action="{{$path}}/edit"><input type="hidden" name="do" value="pin-name"><input type="hidden" name="alias" value="{{.ID}}"><button type="submit">Show first</button></form> {{end}}{{if gt $n 1}}<form class="inline" method="post" action="{{$path}}/edit"><input type="hidden" name="do" value="remove-name"><input type="hidden" name="alias" value="{{.ID}}"><button class="danger" type="submit">Remove</button></form>{{end}}</td>
+<td class="fill">{{.Name}}{{if not $i}} <span class="muted">(its name)</span>{{end}}<input type="hidden" form="names" name="alias" value="{{.ID}}"></td>
+<td><select form="names" name="lang-{{.ID}}" aria-label="Kind of name">
+<option value="en"{{if eq .Lang "en"}} selected{{end}}>English</option>
+<option value="romaji"{{if eq .Lang "romaji"}} selected{{end}}>Romaji</option>
+<option value="original"{{if eq .Lang "original"}} selected{{end}}>Original script</option>
+</select></td>
+<td class="check">{{if $i}}<input type="checkbox" form="names" name="shown-{{.ID}}" value="1"{{if .Shown}} checked{{end}} aria-label="List {{.Name}} on its page">{{else}}<span class="muted">—</span>{{end}}</td>
+<td class="check">{{if $i}}<input type="radio" form="names" name="in-lists" value="{{.ID}}"{{if .InLists}} checked{{end}} aria-label="Show {{.Name}} under its name in lists">{{else}}<span class="muted">—</span>{{end}}</td>
+<td class="action">{{if $i}}<form class="inline" method="post" action="{{$path}}/edit"><input type="hidden" name="do" value="pin-name"><input type="hidden" name="alias" value="{{.ID}}"><button type="submit">Use as its name</button></form> {{end}}{{if gt $n 1}}<form class="inline" method="post" action="{{$path}}/edit"><input type="hidden" name="do" value="remove-name"><input type="hidden" name="alias" value="{{.ID}}"><button class="danger" type="submit">Remove</button></form>{{end}}</td>
 </tr>
 {{end}}</tbody>
 </table>
 </div>
+{{if gt $n 1}}<p><label><input type="radio" form="names" name="in-lists" value="0"{{if not .InLists}} checked{{end}}> No other name in lists</label></p>{{end}}
+<button type="submit" form="names">Save names</button>
+<p class="help">Names ticked under On its page are listed under the title on this {{.Noun}}'s page. The one picked under In lists shows under its name in tables and rankings.{{if not otherNames}} Other names are hidden everywhere right now. <a href="/settings#names">Show them in Settings</a>.{{end}}</p>
+<p class="help">Every name, shown or not, is used to link new scrobbles to this {{.Noun}} and to suggest likely duplicates in Review. Remove a name to stop that.</p>
 <form class="inline-form" method="post" action="{{.Path}}/edit">
 <input type="hidden" name="do" value="add-name">
 <label class="visually-hidden" for="add-name">Another name</label>
@@ -109,6 +114,23 @@
 <p class="help">In Top songs with Combine versions ticked, a recording with its own row is ranked apart from the song, like an instrumental.</p>
 {{else}}{{with index .Recordings 0}}<h3>Version</h3>
 {{template "version-form" (versionForm $path .)}}{{end}}{{end}}
+
+<h3 id="credits">Credited artists</h3>
+<p class="help">Fix who a recording is credited to, like a channel name or a voice actor sent in place of the character. Listens already linked stay with this song.</p>
+{{$many := gt (len .RecordingCredits) 1}}
+{{range .RecordingCredits}}{{$rec := .ID}}
+{{if $many}}<p>{{.Label}}</p>{{end}}
+<ul class="plain">{{range .Credits}}<li><a href="/artist/{{.ID}}">{{.Name}}</a>{{if eq .Role "featured"}} <span class="muted">(featured)</span>{{end}} <form class="inline" method="post" action="{{$path}}/edit"><input type="hidden" name="do" value="uncredit"><input type="hidden" name="recording" value="{{$rec}}"><input type="hidden" name="artist" value="{{.ID}}"><input type="hidden" name="role" value="{{.Role}}"><button type="submit">Take off</button></form></li>{{end}}</ul>
+<form class="inline-form" method="post" action="{{$path}}/edit">
+<input type="hidden" name="do" value="credit"><input type="hidden" name="recording" value="{{$rec}}">
+<label class="visually-hidden" for="credit-{{$rec}}">Artist</label>
+<input type="text" id="credit-{{$rec}}" name="artist" placeholder="Artist name" required>
+<label class="visually-hidden" for="credit-role-{{$rec}}">As</label>
+<select id="credit-role-{{$rec}}" name="role"><option value="main">Main artist</option><option value="featured">Featured</option></select>
+<button type="submit">Credit</button>
+</form>
+{{end}}
+<p class="help">Someone with no artist page yet, like a character, gets one when you credit them.</p>
 {{end}}
 
 {{if eq .Kind "release"}}
@@ -125,6 +147,35 @@
 <p class="help">Shown next to the name to tell albums with the same name apart, like the game they're from.</p></div>
 <button type="submit">Save</button>
 </form>
+
+<h3 id="album-artists">Album artists</h3>
+{{if .AlbumArtists}}<ul class="plain">{{range .AlbumArtists}}<li><a href="/artist/{{.ID}}">{{.Name}}</a> <form class="inline" method="post" action="{{$path}}/edit"><input type="hidden" name="do" value="uncredit-album"><input type="hidden" name="artist" value="{{.ID}}"><button type="submit">Take off</button></form></li>{{end}}</ul>
+{{else}}<p>No album artist. It goes with its songs' artists.</p>{{end}}
+<form class="inline-form" method="post" action="{{.Path}}/edit">
+<input type="hidden" name="do" value="credit-album">
+<label class="visually-hidden" for="album-artist">Artist</label>
+<input type="text" id="album-artist" name="artist" placeholder="Artist name" required>
+<button type="submit">Credit</button>
+</form>
+
+{{if .Tracks}}<h3 id="tracks">Songs on it</h3>
+<form id="take-off" method="post" action="{{.Path}}/edit"><input type="hidden" name="do" value="take-off"></form>
+<div class="table-scroll">
+<table class="table">
+<thead><tr><th scope="col" class="check"><span class="visually-hidden">Pick</span></th><th scope="col" class="wide">Song</th><th scope="col" class="wide">Artist</th><th scope="col" class="num">Listens</th></tr></thead>
+<tbody>
+{{range .Tracks}}<tr>
+<td class="check"><input type="checkbox" form="take-off" name="recording" value="{{.RecordingID}}" aria-label="Pick {{.Song.Name}}"></td>
+<td>{{.Song.Name}}{{with .Version}} <span class="muted">({{.}})</span>{{end}}</td>
+<td>{{range $i, $a := .Artists}}{{if $i}}, {{end}}{{$a.Name}}{{end}}</td>
+<td class="num">{{num .Listens}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+<button type="submit" form="take-off">Take checked off this album</button>
+<p class="help">For songs that ended up here by mistake, like listens sent with “4:00 AM” as the album. They stay in your history with no album, and are never put back on it.</p>
+{{end}}
 {{end}}
 
 {{if .Credits}}
@@ -165,13 +216,26 @@
 <p class="help">Adds its English, romaji and Japanese names{{if eq .Kind "artist"}}, and offers its members{{end}}. You see them before anything is added.</p>
 
 <h3 id="merge">Merge</h3>
-<p class="help">Everything here moves to the {{.Noun}} you pick, and this page then leads there. Undo puts it all back.</p>
+<p class="help">Everything here moves to the {{.Noun}} you pick, and this page then leads there. Its names come along hidden, so scrobbles sent with them still end up there. Undo puts it all back.</p>
 <form class="inline-form" method="get" action="{{.Path}}/edit#merge">
-<label class="visually-hidden" for="merge">Find the {{.Noun}} to merge into</label>
-<input type="text" id="merge" name="merge" value="{{.MergeQuery}}" placeholder="Find the {{.Noun}} to merge into">
+<label class="visually-hidden" for="merge-find">Find the {{.Noun}} to merge into</label>
+<input type="text" id="merge-find" name="merge" value="{{.MergeQuery}}" placeholder="Find the {{.Noun}} to merge into">
 <button type="submit">Find</button>
 </form>
 {{if .MergeResults}}<ul class="plain">{{range .MergeResults}}<li><a href="{{index pagePaths $.Kind}}/{{.ID}}">{{.Name}}</a>{{with .OtherNames}} <span class="other">{{.}}</span>{{end}} <form class="inline" method="post" action="{{$path}}/edit"><input type="hidden" name="do" value="merge"><input type="hidden" name="into" value="{{.ID}}"><button type="submit">Merge into this</button></form></li>{{end}}</ul>
 {{else if .MergeQuery}}<p>Nothing else matches “{{.MergeQuery}}”.</p>{{end}}
+
+{{if eq .Kind "song"}}
+<h3 id="graveyard">Graveyard</h3>
+{{if .Buried}}<p>This song is in the graveyard. Its listens are kept but don't count anywhere.</p>
+<form method="post" action="{{.Path}}/edit"><input type="hidden" name="do" value="unbury"><button type="submit">Bring back</button></form>
+{{else}}<p class="help">For something that isn't music, like a video or a podcast. Its listens are kept but stop counting, and later listens of it go there too. You can bring it back or delete its listens from <a href="/review#graveyard">Review</a>.</p>
+<form method="post" action="{{.Path}}/edit"><input type="hidden" name="do" value="bury"><button class="danger" type="submit">Move to the graveyard</button></form>{{end}}
+{{else}}{{if .Usage}}
+<h3 id="delete">Delete</h3>
+{{with .InUse}}<p>{{.}} Fix that first, then it can be deleted.</p>
+{{else}}<p class="help">Nothing uses this {{.Noun}} anymore. Undo brings it back.</p>
+<form method="post" action="{{.Path}}/edit"><input type="hidden" name="do" value="delete"><button class="danger" type="submit">Delete this {{.Noun}}</button></form>{{end}}
+{{end}}{{end}}
 </div>
 {{end}}

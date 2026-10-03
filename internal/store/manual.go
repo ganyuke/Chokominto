@@ -30,6 +30,7 @@ func (db *DB) SearchRecordings(ctx context.Context, userID int64, q string, limi
 	return db.recordingCounts(ctx, `SELECT r.id,
 		coalesce((SELECT sum(n) FROM listen_totals WHERE user_id = ?3 AND recording_id = r.id), 0) AS n
 		FROM recordings r WHERE r.user_id = ?3 AND r.merged_into IS NULL
+		AND (SELECT buried_by FROM songs WHERE id = r.song_id) IS NULL
 		-- A recording nothing is linked to is left over from a relink.
 		AND EXISTS (SELECT 1 FROM sources WHERE recording_id = r.id) AND (
 		  r.song_id IN (SELECT song_id FROM song_aliases WHERE `+hit+`)

@@ -196,3 +196,134 @@ func TestMergeSpellingsAndUndo(t *testing.T) {
 		t.Fatalf("changes:\n%s", changes)
 	}
 }
+
+func TestNamesAndCleanup(t *testing.T) {
+	a, db := newAgent(t, false,
+		[2]string{"Aniplex", "不可思議のカルテ 桜島麻衣 Ver."},
+		[2]string{"瀬戸麻沙美", "不可思議のカルテ"},
+		[2]string{"Some Channel", "Rick Astley - Never Gonna Give You Up"})
+	ctx := context.Background()
+
+	// Delete and the graveyard are marked so apps can ask first.
+	list := a.call("tools/list", nil)["result"].(map[string]any)["tools"].([]any)
+	for _, tl := range list {
+		m := tl.(map[string]any)
+		ann := m["annotations"].(map[string]any)
+		want := m["name"] == "delete" || m["name"] == "move_to_graveyard"
+		if ann["destructiveHint"] != want {
+			t.Errorf("%s destructiveHint %v", m["name"], ann["destructiveHint"])
+		}
+	}
+
+	var found []item
+	json.Unmarshal([]byte(a.tool("search", map[string]any{"kind": "song", "query": "不可思議のカルテ"}, false)), &found)
+	if len(found) != 2 {
+		t.Fatalf("songs %+v", found)
+	}
+	song := found[0].ID
+	a.tool("merge", map[string]any{"kind": "song", "from_id": found[1].ID, "into_id": song}, false)
+	var shown struct {
+		Names      []nameInfo
+		Recordings []struct {
+			RecordingID int64 `json:"recording_id"`
+			Artists     []item
+		}
+	}
+	json.Unmarshal([]byte(a.tool("show_song", map[string]any{"song_id": song}, false)), &shown)
+	if len(shown.Names) != 1 || !shown.Names[0].Main || shown.Names[0].Kind != "original" {
+		t.Fatalf("names %+v", shown.Names)
+	}
+
+	// Names: add the romaji, mark it, show it in lists, hide another.
+	a.tool("add_name", map[string]any{"kind": "song", "id": song, "name": "Fukashigi no Karte"}, false)
+	a.tool("add_name", map[string]any{"kind": "song", "id": song, "name": "fukashigi no carte lofi"}, false)
+	json.Unmarshal([]byte(a.tool("show_song", map[string]any{"song_id": song}, false)), &shown)
+	ids := map[string]int64{}
+	for _, n := range shown.Names {
+		ids[n.Name] = n.NameID
+	}
+	a.tool("set_name", map[string]any{"kind": "song", "id": song, "name_id": ids["Fukashigi no Karte"], "name_kind": "romaji", "in_lists": true}, false)
+	a.tool("set_name", map[string]any{"kind": "song", "id": song, "name_id": ids["fukashigi no carte lofi"], "on_page": false}, false)
+	e, _ := db.Entity(ctx, 1, "song", song)
+	if e.Name != "不可思議のカルテ" && e.Name != "Fukashigi no Karte" || strings.Contains(e.OtherNames, "lofi") {
+		t.Fatalf("shown %q / %q", e.Name, e.OtherNames)
+	}
+	a.tool("remove_name", map[string]any{"kind": "song", "id": song, "name_id": ids["fukashigi no carte lofi"]}, false)
+	if text := a.tool("set_name", map[string]any{"kind": "song", "id": song, "name_id": 999}, true); !strings.Contains(text, "isn't one of its names") {
+		t.Fatal(text)
+	}
+
+	// The character's version is credited to the channel: credit the
+	// character, new, and then the channel can go.
+	var rec int64
+	var channel int64
+	for _, r := range shown.Recordings {
+		if len(r.Artists) == 1 && r.Artists[0].Name == "Aniplex" {
+			rec, channel = r.RecordingID, r.Artists[0].ID
+		}
+	}
+	if rec == 0 {
+		t.Fatalf("recordings %+v", shown.Recordings)
+	}
+	if text := a.tool("delete", map[string]any{"kind": "artist", "id": channel}, true); !strings.Contains(text, "1 songs") {
+		t.Fatal(text)
+	}
+	c := a.tool("set_credits", map[string]any{"recording_id": rec, "new_artists": []string{"桜島麻衣"}}, false)
+	if !strings.Contains(c, "Credited 桜島麻衣") {
+		t.Fatal(c)
+	}
+	if c := a.tool("delete", map[string]any{"kind": "artist", "id": channel}, false); !strings.Contains(c, "Deleted the artist Aniplex") {
+		t.Fatal(c)
+	}
+
+	// Not music.
+	json.Unmarshal([]byte(a.tool("search", map[string]any{"kind": "song", "query": "Never Gonna"}, false)), &found)
+	g := a.tool("move_to_graveyard", map[string]any{"song_id": found[0].ID}, false)
+	if !strings.Contains(g, "graveyard with 1 listen") {
+		t.Fatal(g)
+	}
+	if gs, _ := db.Graveyard(ctx, 1); len(gs) != 1 {
+		t.Fatalf("graveyard %+v", gs)
+	}
+	a.tool("bring_back", map[string]any{"song_id": found[0].ID}, false)
+	if gs, _ := db.Graveyard(ctx, 1); len(gs) != 0 {
+		t.Fatalf("still in the graveyard %+v", gs)
+	}
+}
+
+func TestTasks(t *testing.T) {
+	a, db := newAgent(t, false,
+		[2]string{"YURiKA", "鏡面の波"}, [2]string{"YURiKA", "Kyoumen no Nami"}, [2]string{"YURiKA", "Kyomen no Nami"})
+	var found []item
+	rows, _ := db.Reader().Query(`SELECT id FROM songs ORDER BY id`)
+	for rows.Next() {
+		var it item
+		rows.Scan(&it.ID)
+		found = append(found, it)
+	}
+	rows.Close()
+	if len(found) != 3 {
+		t.Fatalf("songs %+v", found)
+	}
+	var started struct {
+		TaskID int64 `json:"task_id"`
+	}
+	json.Unmarshal([]byte(a.tool("start_task", map[string]any{"name": "Merge 鏡面の波 spellings"}, false)), &started)
+	a.tool("merge", map[string]any{"kind": "song", "from_id": found[1].ID, "into_id": found[0].ID}, false)
+	a.tool("merge", map[string]any{"kind": "song", "from_id": found[2].ID, "into_id": found[0].ID}, false)
+	a.tool("finish_task", map[string]any{}, false)
+	if changes := a.tool("recent_changes", map[string]any{"limit": 2}, false); strings.Count(changes, `"task": "Merge 鏡面の波 spellings"`) != 2 {
+		t.Fatalf("changes:\n%s", changes)
+	}
+	if text := a.tool("undo_task", map[string]any{"task_id": started.TaskID}, false); !strings.Contains(text, "Undid all 2 changes") {
+		t.Fatal(text)
+	}
+	for _, f := range found {
+		if e, _ := db.Entity(context.Background(), 1, "song", f.ID); e.MergedInto != 0 {
+			t.Fatalf("song %d still merged", f.ID)
+		}
+	}
+	if text := a.tool("undo_task", map[string]any{"task_id": started.TaskID}, true); !strings.Contains(text, "already undone") {
+		t.Fatal(text)
+	}
+}

@@ -451,3 +451,7 @@ ul.candidates button { margin-top: var(--s1); }
 .stats { margin: calc(-1 * var(--s3)) 0 var(--s3); color: var(--text-muted); }
 .stats strong { color: var(--heading); font-size: var(--text-h3); }
 .stats .sep { color: var(--border); }
+
+/* An agent's task on Changes: one row, its changes listed when opened. */
+.task summary { cursor: pointer; }
+.task ul.plain { margin: var(--s1) 0 0; }

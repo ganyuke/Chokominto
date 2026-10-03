@@ -169,10 +169,14 @@ func TestMergeArtists(t *testing.T) {
 	if n := count(t, db, `SELECT count(*) FROM recording_artists WHERE artist_id = ?`, m.yoasobi); n != 2 {
 		t.Errorf("winner credited on %d recordings", n)
 	}
-	var name, others string
-	db.r.QueryRow(`SELECT name, other_names FROM artists WHERE id = ?`, m.yoasobi).Scan(&name, &others)
-	if name != "YOASOBI" || others != "ＹＯＡＳＯＢＩ" {
-		t.Errorf("names %q / %q", name, others)
+	// The merged name is kept, for recognizing scrobbles, but not shown.
+	var name, others, byline string
+	db.r.QueryRow(`SELECT name, other_names, byline FROM artists WHERE id = ?`, m.yoasobi).Scan(&name, &others, &byline)
+	if name != "YOASOBI" || others != "" || byline != "" {
+		t.Errorf("names %q / %q / %q", name, others, byline)
+	}
+	if n := count(t, db, `SELECT count(*) FROM artist_aliases WHERE artist_id = ? AND name = 'ＹＯＡＳＯＢＩ' AND shown = 0`, m.yoasobi); n != 1 {
+		t.Error("merged name not kept hidden")
 	}
 	var merged int64
 	db.r.QueryRow(`SELECT merged_into FROM artists WHERE id = ?`, m.yoasobiFW).Scan(&merged)

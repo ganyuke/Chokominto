@@ -92,7 +92,7 @@ func (db *DB) FindSuggestions(ctx context.Context, userID int64) error {
 	// a likely duplicate, by another artist a possible cover. Each song is
 	// represented by its first recording.
 	songs, err := db.aliasRows(ctx, `SELECT a.song_id, a.lang, a.match_key, coalesce(a.romaji_key, ''), coalesce(a.guess_key, ''), a.name
-		FROM song_aliases a JOIN songs e ON e.id = a.song_id WHERE e.user_id = ? AND e.merged_into IS NULL`, userID)
+		FROM song_aliases a JOIN songs e ON e.id = a.song_id WHERE e.user_id = ? AND e.merged_into IS NULL AND e.buried_by IS NULL`, userID)
 	if err != nil {
 		return err
 	}

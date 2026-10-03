@@ -228,7 +228,7 @@ func TestOwnerSplitSongs(t *testing.T) {
 
 func TestViewCountsAreNotAlbums(t *testing.T) {
 	e := newEnv(t)
-	for _, album := range []string{"33M plays", "41M plays", "1,234 views", "2.1万回再生", "12 plays"} {
+	for _, album := range []string{"33M plays", "41M plays", "1,234 views", "4 million views", "2.1万回再生", "12 plays"} {
 		e.scrobble("Hoshimachi Suisei", "BIBBIDIBA", album)
 	}
 	e.scrobble("Hoshimachi Suisei", "BIBBIDIBA", "Specter")

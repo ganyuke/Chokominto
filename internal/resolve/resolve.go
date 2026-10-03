@@ -287,8 +287,8 @@ func albumArtistsFor(ctx context.Context, tx *sql.Tx, userID int64, text string,
 
 // viewCount matches what YouTube and YouTube Music show under a video,
 // which Web Scrobbler sometimes sends as the album: "33M plays",
-// "1,234 views", "2.1万回再生".
-var viewCount = regexp.MustCompile(`(?i)^\d[\d.,]*\s*(?:[KMB]|万|億)?\s*(?:plays|views|回再生|回視聴)$`)
+// "1,234 views", "4 million views", "2.1万回再生".
+var viewCount = regexp.MustCompile(`(?i)^\d[\d.,]*\s*(?:[KMB]|thousand|million|billion|万|億)?\s*(?:plays|views|回再生|回視聴)$`)
 
 // placeholder matches what players send when they don't know the artist or
 // album: "Unknown", "Unknown Artist", Android's "<unknown>". It's read like

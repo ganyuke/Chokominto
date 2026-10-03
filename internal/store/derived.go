@@ -140,8 +140,17 @@ func afterChange(ctx context.Context, tx *sql.Tx, w *derivedWork, c Change, key 
 		}
 
 	case "artists", "songs", "releases":
-		if _, ok := c.After["pinned_alias"]; ok {
-			w.name(entityAliasTable[t], key["id"])
+		for _, col := range []string{"pinned_alias", "second_alias", "second_set"} {
+			if _, ok := c.After[col]; ok && c.op() == OpUpdate {
+				w.name(entityAliasTable[t], key["id"])
+			}
+		}
+		// Listens that arrived while a song was in the graveyard were hidden
+		// with it but not logged, so bringing it back by undo finds them here.
+		if before, ok := c.Before["buried_by"]; ok && before != nil && c.After["buried_by"] == nil && c.op() == OpUpdate {
+			if _, err := tx.ExecContext(ctx, `UPDATE listens SET deleted_by = NULL WHERE deleted_by = ?`, before); err != nil {
+				return err
+			}
 		}
 		if _, ok := c.After["kind"]; ok && t == "artists" {
 			return w.recordingsOf(ctx, tx, `SELECT recording_id FROM recording_artists WHERE artist_id = ?`, key["id"])
@@ -191,6 +200,10 @@ func beforeDelete(ctx context.Context, tx *sql.Tx, table string, key map[string]
 	switch table {
 	case "recordings":
 		_, err = tx.ExecContext(ctx, `DELETE FROM recording_artists WHERE recording_id = ?`, key["id"])
+	case "artists":
+		// Only ever left from credits the same edit also takes away, whose
+		// recordings are expanded again at the end.
+		_, err = tx.ExecContext(ctx, `DELETE FROM recording_artists WHERE artist_id = ?`, key["id"])
 	case "rules":
 		_, err = tx.ExecContext(ctx, `UPDATE edits SET rule_id = NULL WHERE rule_id = ?`, key["id"])
 	}

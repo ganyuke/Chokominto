@@ -571,6 +571,7 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request, viewer *store.User
 
 type entityPage struct {
 	Page
+	Buried      bool // a song in the graveyard
 	Kind        string
 	Name        name
 	Labels      []string
@@ -759,6 +760,11 @@ func (s *Server) songPage(w http.ResponseWriter, r *http.Request, viewer *store.
 		return
 	}
 	p.Name = songName(e.Ref)
+	var err error
+	if p.Buried, err = s.db.SongBuried(r.Context(), e.ID); err != nil {
+		s.serverError(w, r, err)
+		return
+	}
 	recs, err := s.db.SongRecordings(r.Context(), owner.ID, e.ID)
 	if err == nil {
 		p.Recordings = recordingRows(recs)

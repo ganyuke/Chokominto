@@ -95,4 +95,23 @@
 </table>
 </div>
 {{end}}
+
+{{if .Graveyard}}
+<h2 id="graveyard">Graveyard <span class="muted">({{num (len .Graveyard)}})</span></h2>
+<p class="help">Songs moved here, like videos that aren't music. Their listens are kept but don't count anywhere, and later listens of them come here too. Bring a song back, or delete its listens.</p>
+<div class="table-scroll">
+<table class="table">
+<thead><tr><th scope="col" class="fill">Song</th><th scope="col" class="wide">Artist</th><th scope="col" class="num">Listens</th><th scope="col">Moved</th><th scope="col" class="action"><span class="muted">Action</span></th></tr></thead>
+<tbody>
+{{range .Graveyard}}<tr>
+<td class="fill">{{template "name" .Song}}</td>
+<td>{{template "names" .Artists}}</td>
+<td class="num">{{num .Listens}}</td>
+<td class="time">{{.Moved}}</td>
+<td class="action"><form class="inline" method="post" action="{{.Song.Href}}/edit"><input type="hidden" name="do" value="unbury"><input type="hidden" name="back" value="review"><button type="submit">Bring back</button></form> <form class="inline" method="post" action="{{.Song.Href}}/edit"><input type="hidden" name="do" value="delete-buried"><input type="hidden" name="back" value="review"><button class="danger" type="submit">Delete listens</button></form></td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+{{end}}
 {{end}}

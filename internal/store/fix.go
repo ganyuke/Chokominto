@@ -130,7 +130,16 @@ func liveRecording(ctx context.Context, tx *sql.Tx, userID, id int64) error {
 	if errors.Is(err, sql.ErrNoRows) || merged.Valid {
 		return ErrNotFound
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	if buried, err := buriedTx(ctx, tx, "recording", id); err != nil || buried {
+		if err == nil {
+			err = ErrBuried
+		}
+		return err
+	}
+	return nil
 }
 
 // releaseFor picks the album a relinked source goes with: the album it's on

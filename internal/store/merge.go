@@ -58,6 +58,7 @@ type plan struct {
 	// ones: true = there, false = removed.
 	rows    map[string]map[string]bool
 	nextIDs map[string]int64 // for rows the plan adds
+	made    []string         // names of artists the plan adds
 }
 
 func (p *plan) add(c Change) {
@@ -249,6 +250,14 @@ func (p *plan) mergeInto(kind string, loser, winner int64) (string, error) {
 		if merged.Valid {
 			return "", ErrMergedAway
 		}
+		if kind == "song" || kind == "recording" {
+			if buried, err := buriedTx(p.ctx, p.tx, kind, id); err != nil || buried {
+				if err == nil {
+					err = ErrBuried
+				}
+				return "", err
+			}
+		}
 	}
 	name, err := entityName(p.ctx, p.tx, kind, loser)
 	if err != nil {
@@ -330,30 +339,8 @@ func (p *plan) moveAliases(table string, loser, winner int64) error {
 	if err != nil {
 		return err
 	}
-	// The winner keeps its name. If a moved name would come first in
-	// display order, the winner's current name is pinned.
-	var wPinned sql.NullInt64
-	var wAlias int64
-	var wLang string
-	err = p.tx.QueryRowContext(p.ctx, fmt.Sprintf(
-		`SELECT e.pinned_alias, a.id, a.lang FROM %s e JOIN %s a ON a.%s = e.id WHERE e.id = ?
-		 ORDER BY (a.id = e.pinned_alias) DESC, CASE a.lang WHEN 'en' THEN 0 WHEN 'romaji' THEN 1 ELSE 2 END, a.id LIMIT 1`,
-		entity, table, owner), winner).Scan(&wPinned, &wAlias, &wLang)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return err
-	}
-	if err == nil && !wPinned.Valid {
-		for _, row := range rows {
-			id, _ := asInt(row["id"])
-			l, _ := row["lang"].(string)
-			if r, wr := langRank(l), langRank(wLang); r < wr || r == wr && id < wAlias {
-				if err := p.update(entity, winner, map[string]any{"pinned_alias": wAlias}); err != nil {
-					return err
-				}
-				break
-			}
-		}
-	}
+	// The winner keeps its name: moved names are hidden, and hidden names
+	// come after shown ones.
 	for _, row := range rows {
 		var dup int
 		if err := p.tx.QueryRowContext(p.ctx, fmt.Sprintf(`SELECT count(*) FROM %s WHERE %s = ? AND name = ?`, table, owner), winner, row["name"]).Scan(&dup); err != nil {
@@ -364,7 +351,9 @@ func (p *plan) moveAliases(table string, loser, winner int64) error {
 			p.add(Change{Op: OpDelete, Table: table, ID: id, Before: row})
 			continue
 		}
-		p.add(Change{Table: table, ID: id, Before: map[string]any{owner: loser}, After: map[string]any{owner: winner}})
+		// The loser's names still recognize scrobbles, but most are just
+		// other spellings players sent, so they aren't shown.
+		p.add(Change{Table: table, ID: id, Before: map[string]any{owner: loser, "shown": row["shown"]}, After: map[string]any{owner: winner, "shown": int64(0)}})
 	}
 	return nil
 }

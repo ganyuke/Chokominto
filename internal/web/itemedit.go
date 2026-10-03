@@ -32,6 +32,7 @@ type editData struct {
 	Path         string // /artist/1
 	Noun         string // artist, song or album
 	Aliases      []store.Alias
+	InLists      bool          // one of the names shows under it in lists
 	Labels       []store.Label // on it
 	OtherLabels  []store.Label // not on it
 	AnyLabels    bool
@@ -45,6 +46,19 @@ type editData struct {
 	MergeQuery   string
 	MergeResults []store.Ref
 	Picture      *pictureData // artists and albums
+
+	RecordingCredits []recordingCredits     // songs
+	Buried           bool                   // songs: in the graveyard
+	AlbumArtists     []store.Ref            // albums
+	Tracks           []store.RecordingCount // albums
+	Usage            *store.Usage           // artists and albums, for deleting
+	InUse            string                 // what still uses it, when something does
+}
+
+type recordingCredits struct {
+	ID      int64
+	Label   string
+	Credits []store.CreditRef
 }
 
 type option struct{ Value, Label string }
@@ -70,6 +84,10 @@ var editErrors = map[string]string{
 	"picture-big":   "That picture is too big. Pick one under 10 MB and 8,000 pixels on each side.",
 	"picture-bad":   "That file isn't a picture Chokominto can read. Try a JPEG, PNG, WebP or GIF.",
 	"picture-fetch": "That picture couldn't be downloaded. Try another one, or look again later.",
+	"in-use":        "It's still in use, so it wasn't deleted. Fix what still uses it first.",
+	"buried":        "That song is in the graveyard. Bring it back first.",
+	"no-main":       "A recording needs at least one main artist. Credit the right one before taking this one off.",
+	"pick-tracks":   "Check some songs first.",
 }
 
 func (s *Server) loadEdit(ctx context.Context, r *http.Request, u *store.User, kind string, id int64) (*editData, error) {
@@ -80,6 +98,9 @@ func (s *Server) loadEdit(ctx context.Context, r *http.Request, u *store.User, k
 	var err error
 	if d.Aliases, err = s.db.Aliases(ctx, kind, id); err != nil {
 		return nil, err
+	}
+	for _, a := range d.Aliases {
+		d.InLists = d.InLists || a.InLists
 	}
 	if d.Labels, err = s.db.ItemLabels(ctx, kind, id); err != nil {
 		return nil, err
@@ -139,6 +160,16 @@ func (s *Server) loadEdit(ctx context.Context, r *http.Request, u *store.User, k
 		for _, o := range os {
 			d.Overrides = append(d.Overrides, overrideRow{o.ScopeID, labels[o.ScopeID], o.From, o.To})
 		}
+		for _, rec := range d.Recordings {
+			cs, err := s.db.RecordingCredits(ctx, rec.ID)
+			if err != nil {
+				return nil, err
+			}
+			d.RecordingCredits = append(d.RecordingCredits, recordingCredits{rec.ID, "The recording by " + recordingLabel(rec) + ":", cs})
+		}
+		if d.Buried, err = s.db.SongBuried(ctx, id); err != nil {
+			return nil, err
+		}
 	case "release":
 		if d.Album, err = s.db.Album(ctx, id); err != nil {
 			return nil, err
@@ -167,6 +198,17 @@ func (s *Server) loadEdit(ctx context.Context, r *http.Request, u *store.User, k
 		for _, o := range os {
 			d.Overrides = append(d.Overrides, overrideRow{o.ScopeID, "", o.From, o.To})
 		}
+		d.Tracks = tracks
+		if d.AlbumArtists, err = s.db.ReleaseArtists(ctx, id); err != nil {
+			return nil, err
+		}
+	}
+	if kind == "artist" || kind == "release" {
+		u, err := s.db.ItemUsage(ctx, kind, id)
+		if err != nil {
+			return nil, err
+		}
+		d.Usage, d.InUse = &u, inUse(kind, u)
 	}
 
 	if d.Picture, err = s.loadPicture(ctx, u, kind, id); err != nil {
@@ -187,6 +229,54 @@ func (s *Server) loadEdit(ctx context.Context, r *http.Request, u *store.User, k
 	return d, nil
 }
 
+// inUse says what still uses an artist or album, or "" when nothing does.
+func inUse(kind string, u store.Usage) string {
+	count := func(n int, one, many string) string {
+		if n == 1 {
+			return "1 " + one
+		}
+		return numberPrinter.Sprintf("%d %s", n, many)
+	}
+	and := func(parts []string) string {
+		if len(parts) < 2 {
+			return strings.Join(parts, "")
+		}
+		return strings.Join(parts[:len(parts)-1], ", ") + " and " + parts[len(parts)-1]
+	}
+	var sentences, parts []string
+	if kind == "artist" {
+		if u.Songs > 0 {
+			parts = append(parts, count(u.Songs, "song", "songs"))
+		}
+		if u.Albums > 0 {
+			parts = append(parts, count(u.Albums, "album", "albums"))
+		}
+		if len(parts) > 0 {
+			sentences = append(sentences, "It's still credited on "+and(parts)+".")
+		}
+		if u.Links > 0 {
+			sentences = append(sentences, "It's still linked to other artists, as a member, a group, \"also counts for\" or in \"who gets credit\".")
+		}
+	} else {
+		if u.Songs > 0 {
+			parts = append(parts, count(u.Songs, "song", "songs"))
+		}
+		if u.Listens > 0 {
+			parts = append(parts, count(u.Listens, "listen", "listens"))
+		}
+		if u.Rules > 0 {
+			parts = append(parts, count(u.Rules, "remembered link", "remembered links"))
+		}
+		if len(parts) > 0 {
+			sentences = append(sentences, "It still has "+and(parts)+" on it.")
+		}
+	}
+	if u.MergedInto {
+		sentences = append(sentences, "Something else was merged into it.")
+	}
+	return strings.Join(sentences, " ")
+}
+
 func recordingLabel(r store.SongRecording) string {
 	var names []string
 	for _, a := range r.Artists {
@@ -197,6 +287,27 @@ func recordingLabel(r store.SongRecording) string {
 		l += " (" + r.Version + ")"
 	}
 	return l
+}
+
+// namesForm reads the All names table: each name's kind, whether it's
+// listed on the page, and which one shows in lists.
+func namesForm(r *http.Request) store.NamesChange {
+	r.ParseForm()
+	var ch store.NamesChange
+	for i, v := range r.PostForm["alias"] {
+		id, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			continue
+		}
+		// The first name is the item's own, always shown.
+		ch.Names = append(ch.Names, store.NameChoice{AliasID: id, Lang: r.PostFormValue(fmt.Sprintf("lang-%d", id)),
+			Shown: i == 0 || r.PostFormValue(fmt.Sprintf("shown-%d", id)) == "1"})
+	}
+	if v := r.PostFormValue("in-lists"); v != "" {
+		id, _ := strconv.ParseInt(v, 10, 64)
+		ch.InLists = &id
+	}
+	return ch
 }
 
 func formInt(r *http.Request, key string) int64 {
@@ -224,8 +335,8 @@ func (s *Server) itemEdit(kind string) func(http.ResponseWriter, *http.Request, 
 			editID, err = s.db.AddName(ctx, u.ID, kind, id, r.PostFormValue("name"))
 		case "remove-name":
 			editID, err = s.db.RemoveName(ctx, u.ID, kind, id, formInt(r, "alias"))
-		case "name-lang":
-			editID, err = s.db.SetNameLang(ctx, u.ID, kind, id, formInt(r, "alias"), r.PostFormValue("lang"))
+		case "names":
+			editID, err = s.db.SetNames(ctx, u.ID, kind, id, namesForm(r))
 		case "pin-name":
 			editID, err = s.db.PinName(ctx, u.ID, kind, id, formInt(r, "alias"))
 		case "label", "unlabel":
@@ -239,6 +350,10 @@ func (s *Server) itemEdit(kind string) func(http.ResponseWriter, *http.Request, 
 			if err == nil {
 				path = fmt.Sprintf("%s/%d", pagePaths[kind], formInt(r, "into"))
 			}
+		case "delete":
+			// The page is gone after, so Changes shows what happened.
+			editID, err = s.db.DeleteItem(ctx, u.ID, kind, id)
+			path = "/changes"
 		default:
 			editID, err = s.kindEdit(ctx, r, u, kind, id, do)
 		}
@@ -252,11 +367,16 @@ func (s *Server) itemEdit(kind string) func(http.ResponseWriter, *http.Request, 
 			return
 		}
 		s.log.Info("item edited", "user", u.Name, "kind", kind, "id", id, "do", r.PostFormValue("do"))
+		// The graveyard in Review sends its buttons here and goes back.
+		fragment := ""
+		if r.PostFormValue("back") == "review" {
+			path, fragment = "/review", "#graveyard"
+		}
 		if editID == 0 {
-			http.Redirect(w, r, path, http.StatusSeeOther) // nothing changed
+			http.Redirect(w, r, path+fragment, http.StatusSeeOther) // nothing changed
 			return
 		}
-		http.Redirect(w, r, fmt.Sprintf("%s?done=%d", path, editID), http.StatusSeeOther)
+		http.Redirect(w, r, fmt.Sprintf("%s?done=%d%s", path, editID, fragment), http.StatusSeeOther)
 	}
 }
 
@@ -295,6 +415,60 @@ func (s *Server) kindEdit(ctx context.Context, r *http.Request, u *store.User, k
 		}
 		_, editID, err := s.db.SplitSong(ctx, u.ID, id, recs)
 		return editID, err
+	case kind == "song" && (do == "credit" || do == "uncredit"):
+		rec := formInt(r, "recording")
+		current, err := s.db.RecordingCredits(ctx, rec)
+		if err != nil {
+			return 0, err
+		}
+		var credits []store.CreditChoice
+		for _, c := range current {
+			if do == "uncredit" && c.ID == formInt(r, "artist") && c.Role == r.PostFormValue("role") {
+				continue
+			}
+			credits = append(credits, store.CreditChoice{ArtistID: c.ID, Role: c.Role})
+		}
+		if do == "credit" {
+			c, err := s.creditChoice(ctx, u, r.PostFormValue("artist"))
+			if err != nil {
+				return 0, err
+			}
+			c.Role = r.PostFormValue("role")
+			credits = append(credits, c)
+		}
+		return s.db.SetRecordingCredits(ctx, u.ID, id, rec, credits)
+	case kind == "release" && (do == "credit-album" || do == "uncredit-album"):
+		current, err := s.db.ReleaseArtists(ctx, id)
+		if err != nil {
+			return 0, err
+		}
+		var artists []store.CreditChoice
+		for _, a := range current {
+			if do == "uncredit-album" && a.ID == formInt(r, "artist") {
+				continue
+			}
+			artists = append(artists, store.CreditChoice{ArtistID: a.ID})
+		}
+		if do == "credit-album" {
+			c, err := s.creditChoice(ctx, u, r.PostFormValue("artist"))
+			if err != nil {
+				return 0, err
+			}
+			artists = append(artists, c)
+		}
+		return s.db.SetAlbumArtists(ctx, u.ID, id, artists)
+	case kind == "release" && do == "take-off":
+		recs := formIDs(r, "recording")
+		if len(recs) == 0 {
+			return 0, errPickTracks
+		}
+		return s.db.TakeOffAlbum(ctx, u.ID, id, recs)
+	case kind == "song" && do == "bury":
+		return s.db.BurySong(ctx, u.ID, id)
+	case kind == "song" && do == "unbury":
+		return s.db.UnburySong(ctx, u.ID, id)
+	case kind == "song" && do == "delete-buried":
+		return s.db.DeleteBuriedListens(ctx, u.ID, id)
 	case kind == "release" && do == "details":
 		return s.db.SetAlbumDetails(ctx, u.ID, id, store.AlbumDetails{Kind: r.PostFormValue("kind"),
 			Released: r.PostFormValue("released"), Context: r.PostFormValue("context")})
@@ -352,8 +526,28 @@ func editErrorCode(err error) string {
 		return "stale"
 	case errors.Is(err, errPicture):
 		return "picture-fetch"
+	case errors.Is(err, store.ErrInUse):
+		return "in-use"
+	case errors.Is(err, store.ErrBuried):
+		return "buried"
+	case errors.Is(err, store.ErrNoMain):
+		return "no-main"
+	case errors.Is(err, errPickTracks):
+		return "pick-tracks"
 	}
 	return ""
+}
+
+var errPickTracks = errors.New("check some songs first")
+
+// creditChoice finds an artist to credit by name, or a new one to add
+// when there's no artist by that name.
+func (s *Server) creditChoice(ctx context.Context, u *store.User, name string) (store.CreditChoice, error) {
+	a, err := s.db.FindArtist(ctx, u.ID, name)
+	if errors.Is(err, store.ErrNoArtist) {
+		return store.CreditChoice{NewArtist: name}, nil
+	}
+	return store.CreditChoice{ArtistID: a.ID}, err
 }
 
 // viewTabs are the Read and Edit tabs of an item page.

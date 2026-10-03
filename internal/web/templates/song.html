@@ -1,5 +1,6 @@
 {{define "content"}}
 <div class="title-line"><h1>{{.Name.Name}}</h1>{{template "view-tabs" .Tabs}}</div>
+{{if .Buried}}<p class="notice" role="status">This song is in the graveyard, so its listens don't count anywhere.{{if .User}} <a href="{{.Name.Href}}/edit#graveyard">Bring it back</a>{{end}}</p>{{end}}
 {{template "stats" .Stats}}
 {{with .Name.Other}}{{if otherNames}}<p class="also-known muted">{{.}}</p>{{end}}{{end}}
 <div class="entity">
