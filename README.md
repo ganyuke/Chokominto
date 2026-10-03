@@ -113,17 +113,32 @@ Running the import again is safe. Listens already in Chokominto are skipped, so 
 
 ## Fixing names and links
 
-Every listen has a Fix link when you're logged in. It shows exactly what your scrobbler sent and lets you link it to another song, split it off as a new song, or delete it. After linking, it offers to remember the choice for similar listens.
+Every listen has a Fix link when you're logged in. The Fix page shows exactly what your scrobbler sent and how many times it sent that same text. Under Scope you choose what a change applies to: every listen sent with that text, which also covers later ones, or only the one listen you opened. From there you can:
+
+- pick another version of the same song, from a list of all its versions
+- search for another song
+- put the listens on another album, or on none
+- type what should have been sent, like the real artist in place of a channel name, and have the listens linked to what that reads as
+- split the listens off as a new song
+- delete the one listen
+
+Each of these says how many listens it moves and what happens to the song they leave. After linking, the page offers rules that do the same for similar listens.
+
+Song and album pages have a Scrobbles tab. It lists every text your scrobblers sent for that song or album, under the version each one is linked to, with the album its listens are on and how it was linked. Check rows to move them to another version, another song or another album in one go. This is the place to fix many listens that ended up on the wrong album.
 
 Review lists songs, artists and albums that look like duplicates, biggest first. Tick several and answer them in one go. Artist, song and album pages have an Edit tab for names, labels, credits and merging.
 
 On the Edit tab, choose which other names are listed on the page and which one shows under the name in tables. Names you don't show still link new scrobbles and find duplicates, so keep the odd spellings players sent and just hide them. Merging hides the merged names for you.
 
+When one album shows up under several names, merge them on the song's Edit tab under Albums, or on the album's Edit tab under Merge, which lists related albums. Renaming an album never needs its scrobbles changed, and scrobbles sent with the old name still end up on it.
+
+A song shows the cover of the album it's listened to most on. To give a song a picture of its own, like one with no album, upload it under Picture on the song's Edit tab.
+
 When a scrobbler got the artist wrong, like a YouTube channel or the voice actor in place of the character, credit the right one on the song's Edit tab. When songs ended up on an album that isn't one, like "4:00 AM", take them off on the album's Edit tab. An artist or album nothing uses anymore can then be deleted at the bottom of its Edit tab.
 
 Something that isn't music, like a video, can go to the graveyard from the bottom of its song's Edit tab. Its listens stop counting but are kept, and later listens of it go there too. The graveyard is at the end of Review, where you bring songs back or delete their listens.
 
-Settings lists every way Chokominto reads what your scrobblers send, with an example for each: splitting artist lists, character credits, titles in two languages, versions like instrumentals. Turn any of them on or off, and your listens are read again in the background, except the ones you linked by hand. Your own remembered rules are listed there too.
+Settings lists every way Chokominto reads what your scrobblers send, with an example for each: splitting artist lists, character credits, titles in two languages, versions like instrumentals. Turn any of them on or off, and your listens are read again in the background, except the ones you linked by hand. Your saved rules are listed under Rules. Fixed links, also in Settings, lists every text whose link was set by hand, in Review, by a merge or by an agent, and lets you hand any of them back to automatic reading.
 
 Every change can be undone from the notice that confirms it, or later from the Changes page. That includes deleted listens (for example ones deleted from Pano Scrobbler).
 

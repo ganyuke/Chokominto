@@ -553,7 +553,12 @@ var japanese = regexp.MustCompile(`[\p{Hiragana}\p{Katakana}\p{Han}]`)
 
 // A version tail in brackets at the end of a title: "(Instrumental)",
 // "（TV size）", "[Remix]", "(From \"THE FIRST TAKE\")".
-var versionBracket = regexp.MustCompile(`(?i)^(.+?)[\s　]*[(（\[［]([^()（）\[\]［］]*(?:instrumental|\binst\b\.?|off[ -]?vocal|karaoke|カラオケ|tv[ -]?size|tvサイズ|\bver\b\.?|version|バージョン|remix|\bmix\b|\bedit\b|\blive\b|acoustic|remaster|edition|\bfrom\s)[^()（）\[\]［］]*)[)）\]］]$`)
+var versionBracket = regexp.MustCompile(`(?i)^(.+?)[\s　]*[(（\[［<＜]([^()（）\[\]［］<>＜＞]*(?:instrumental|\binst\b\.?|off[ -]?vocal|karaoke|カラオケ|tv[ -]?size|tvサイズ|\bver\b\.?|version|バージョン|remix|\bmix\b|\bedit\b|\blive\b|acoustic|remaster|edition|\bfrom\s)[^()（）\[\]［］<>＜＞]*)[)）\]］>＞]$`)
+
+// "TV size" with nothing around it at the end of a title: "五等分のカタチ TV
+// Size". Only this one is read bare, since other version words are also
+// ordinary words in titles. A title that is nothing but "TV Size" stays.
+var versionBare = regexp.MustCompile(`(?i)^(.+?)[\s　]+((?:tv[ -]?size|tvサイズ)(?:[\s　]*ver(?:sion|\.)?)?\.?)$`)
 
 // The same after a dash: "Nandemonaiya - movie ver.", "Stellar Stellar -
 // From THE FIRST TAKE". A tail with brackets of its own is another name
@@ -574,7 +579,12 @@ func readTitle(t string, titles, versions bool) (title, alt, version string) {
 		return title, "", ""
 	}
 	if m := versionDash.FindStringSubmatch(title); versions && m != nil {
-		title, version = strings.TrimSpace(m[1]), strings.TrimSpace(m[2])
+		// "恋愛ミリフィルム -TV size.- - Renai millimeter film TV size": the
+		// tail is the other name with a bare version, not a version.
+		otherName := titles && japanese.MatchString(m[1]) && !japanese.MatchString(m[2]) && versionBare.MatchString(strings.TrimSpace(m[2]))
+		if !otherName {
+			title, version = strings.TrimSpace(m[1]), strings.TrimSpace(m[2])
+		}
 	}
 	// "君のせい - Kiminosei": Japanese on the left, none on the right.
 	for _, i := range dashes(title) {
@@ -611,6 +621,18 @@ func readTitle(t string, titles, versions bool) (title, alt, version string) {
 		// The other name can carry the tail too, or alone: "君のせい -
 		// Kiminosei (Instrumental)" is the instrumental.
 		if am := versionBracket.FindStringSubmatch(alt); am != nil {
+			alt = strings.TrimSpace(am[1])
+			if version == "" {
+				version = strings.TrimSpace(am[2])
+			}
+		}
+		if m := versionBare.FindStringSubmatch(title); m != nil {
+			title = strings.TrimSpace(m[1])
+			if version == "" {
+				version = strings.TrimSpace(m[2])
+			}
+		}
+		if am := versionBare.FindStringSubmatch(alt); am != nil {
 			alt = strings.TrimSpace(am[1])
 			if version == "" {
 				version = strings.TrimSpace(am[2])

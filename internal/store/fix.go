@@ -183,6 +183,7 @@ type LinkResult struct {
 	EditID  int64
 	Listens int // listens that moved
 	Name    string
+	From    string // what they were linked to before, when all to one thing
 }
 
 // LinkSources links received text to a recording by hand, as one edit.
@@ -201,6 +202,7 @@ func (db *DB) LinkSources(ctx context.Context, userID int64, sourceIDs []int64, 
 		p := &plan{ctx: ctx, tx: tx, userID: userID}
 		planned := map[[2]int64]bool{}
 		ids := slices.Compact(slices.Sorted(slices.Values(sourceIDs)))
+		from := map[int64]bool{}
 		for _, id := range ids {
 			s, err := SourceTx(ctx, tx, id)
 			if err != nil || s.UserID != userID {
@@ -211,17 +213,44 @@ func (db *DB) LinkSources(ctx context.Context, userID int64, sourceIDs []int64, 
 				return err
 			}
 			var n int
-			tx.QueryRowContext(ctx, `SELECT count(*) FROM listens WHERE source_id = ? AND deleted_by IS NULL`, id).Scan(&n)
+			tx.QueryRowContext(ctx, `SELECT count(*) FROM listens WHERE source_id = ? AND deleted_by IS NULL AND fixed_by IS NULL`, id).Scan(&n)
 			res.Listens += n
+			from[s.RecordingID.Int64] = true
 			p.linkSource(s, recordingID, rel)
 		}
 		if len(ids) == 0 {
 			return ErrNotFound
 		}
-		res.EditID, err = p.apply(EditMeta{Kind: "link", Summary: fmt.Sprintf("Linked %s to %s", plural(res.Listens, "listen"), name)})
+		res.From = fromName(ctx, tx, from, recordingID)
+		res.EditID, err = p.apply(EditMeta{Kind: "link", Summary: moveSummary(res.Listens, res.From, name)})
 		return err
 	})
 	return res, err
+}
+
+// fromName names the one recording listens are moved away from, or "" when
+// they weren't linked, came from several, or were there already.
+func fromName(ctx context.Context, tx *sql.Tx, from map[int64]bool, to int64) string {
+	if len(from) != 1 {
+		return ""
+	}
+	for id := range from {
+		if id == 0 || id == to {
+			return ""
+		}
+		name, _ := entityName(ctx, tx, "recording", id)
+		return name
+	}
+	return ""
+}
+
+// moveSummary says what linking by hand did: "Moved 21 listens from A to
+// B", or "Linked 21 listens to B" for listens that weren't on one song.
+func moveSummary(n int, from, to string) string {
+	if from == "" {
+		return fmt.Sprintf("Linked %s to %s", plural(n, "listen"), to)
+	}
+	return fmt.Sprintf("Moved %s from %s to %s", plural(n, "listen"), from, to)
 }
 
 // linkSource plans pointing received text at a recording, as linked by the
@@ -253,8 +282,9 @@ func formatCount(n int) string {
 
 // NewSongTx splits received text off into a new song with one recording
 // and the given credits, as one edit. The artists must exist already. The
-// listens keep the album they're on.
-func NewSongTx(ctx context.Context, tx *sql.Tx, userID, sourceID int64, title string, credits []Credit) (int64, LinkResult, error) {
+// listens keep the album they're on. With listenID set, only that listen
+// goes to the new song, apart from the others sent with the same text.
+func NewSongTx(ctx context.Context, tx *sql.Tx, userID, sourceID, listenID int64, title string, credits []Credit) (int64, LinkResult, error) {
 	var res LinkResult
 	s, err := SourceTx(ctx, tx, sourceID)
 	if err != nil || s.UserID != userID {
@@ -284,12 +314,33 @@ func NewSongTx(ctx context.Context, tx *sql.Tx, userID, sourceID int64, title st
 		p.add(Change{Op: OpInsert, Table: "recording_credits", After: map[string]any{"recording_id": rec, "artist_id": c.ArtistID,
 			"role": c.Role, "position": int64(i), "credited_as": nil}})
 	}
-	rel, err := p.releaseFor(s, rec, map[[2]int64]bool{})
-	if err != nil {
-		return 0, res, err
+	if listenID != 0 {
+		var lrec, lrel, fixed sql.NullInt64
+		err := tx.QueryRowContext(ctx, `SELECT recording_id, release_id, fixed_by FROM listens WHERE id = ? AND user_id = ? AND source_id = ? AND deleted_by IS NULL`,
+			listenID, userID, sourceID).Scan(&lrec, &lrel, &fixed)
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, res, ErrNotFound
+		}
+		if err != nil {
+			return 0, res, err
+		}
+		if lrel.Valid {
+			p.add(Change{Op: OpInsert, Table: "release_tracks", After: map[string]any{"release_id": lrel.Int64, "recording_id": rec, "disc": int64(1), "position": nil}})
+		}
+		before := map[string]any{"recording_id": nullable(lrec), "release_id": nullable(lrel), "fixed_by": nullable(fixed)}
+		p.changes = append(p.changes, func(editID int64) Change {
+			return Change{Table: "listens", ID: listenID, Before: before,
+				After: map[string]any{"recording_id": rec, "release_id": nullable(lrel), "fixed_by": editID}}
+		})
+		res.Listens = 1
+	} else {
+		rel, err := p.releaseFor(s, rec, map[[2]int64]bool{})
+		if err != nil {
+			return 0, res, err
+		}
+		p.linkSource(s, rec, rel)
+		tx.QueryRowContext(ctx, `SELECT count(*) FROM listens WHERE source_id = ? AND deleted_by IS NULL AND fixed_by IS NULL`, sourceID).Scan(&res.Listens)
 	}
-	p.linkSource(s, rec, rel)
-	tx.QueryRowContext(ctx, `SELECT count(*) FROM listens WHERE source_id = ? AND deleted_by IS NULL`, sourceID).Scan(&res.Listens)
 	res.Name = title
 	res.EditID, err = p.apply(EditMeta{Kind: "link", Summary: fmt.Sprintf("Made %s a new song, with %s", title, plural(res.Listens, "listen"))})
 	return rec, res, err

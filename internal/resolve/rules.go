@@ -326,8 +326,9 @@ func UndoTask(ctx context.Context, db *store.DB, userID, taskID int64) (int, err
 
 // NewSong splits received text off into a new song of its own, as one
 // edit. Linked text keeps its song's name and artists. Unlinked text is
-// read with the owner's rules, like auto-linking would.
-func NewSong(ctx context.Context, db *store.DB, userID, sourceID int64) (int64, store.LinkResult, error) {
+// read with the owner's rules, like auto-linking would. With listenID set,
+// only that listen goes to the new song.
+func NewSong(ctx context.Context, db *store.DB, userID, sourceID, listenID int64) (int64, store.LinkResult, error) {
 	var rec int64
 	var res store.LinkResult
 	err := db.Write(ctx, func(tx *sql.Tx) error {
@@ -364,7 +365,7 @@ func NewSong(ctx context.Context, db *store.DB, userID, sourceID int64) (int64, 
 				credits = append(credits, store.Credit{ArtistID: id, Role: role})
 			}
 		}
-		rec, res, err = store.NewSongTx(ctx, tx, userID, sourceID, title, credits)
+		rec, res, err = store.NewSongTx(ctx, tx, userID, sourceID, listenID, title, credits)
 		return err
 	})
 	return rec, res, err
@@ -373,3 +374,90 @@ func NewSong(ctx context.Context, db *store.DB, userID, sourceID int64) (int64, 
 // ErrNothingToGoOn means received text has no artist or title to make a
 // song from.
 var ErrNothingToGoOn = errors.New("no artist or title to go on")
+
+// ErrAmbiguous means typed text could be more than one song.
+var ErrAmbiguous = errors.New("that could be more than one song")
+
+// placeTyped finds or creates the recording and album that text reads as,
+// the way a scrobble with that text would be linked.
+func placeTyped(ctx context.Context, tx *sql.Tx, src store.Source, t Text) (rec, rel int64, err error) {
+	rules, err := store.RulesTx(ctx, tx, src.UserID)
+	if err != nil {
+		return 0, 0, err
+	}
+	var ruleID int64
+	rec, rel, out, err := place(ctx, tx, src, Clean(t, rules), rules, &ruleID)
+	switch {
+	case err != nil:
+		return 0, 0, err
+	case out == Ambiguous:
+		return 0, 0, ErrAmbiguous
+	case out != Linked:
+		return 0, 0, ErrNothingToGoOn
+	}
+	if err := store.QueueSuggestTx(ctx, tx, src.UserID); err != nil {
+		return 0, 0, err
+	}
+	return rec, rel, store.RebuildRecordingArtistsTx(ctx, tx, rec)
+}
+
+// LinkAs links received text by hand to what the typed artist, title and
+// album read as, creating the song, version and album when they aren't
+// there yet. The received text itself is kept. With listenID set, only
+// that listen is linked, apart from the others sent with the same text.
+func LinkAs(ctx context.Context, db *store.DB, userID, sourceID, listenID int64, t Text) (store.LinkResult, error) {
+	var res store.LinkResult
+	err := db.Write(ctx, func(tx *sql.Tx) error {
+		src, err := store.SourceTx(ctx, tx, sourceID)
+		if err != nil || src.UserID != userID {
+			return store.ErrNotFound
+		}
+		rec, rel, err := placeTyped(ctx, tx, src, t)
+		if err != nil {
+			return err
+		}
+		if listenID != 0 {
+			res, err = store.LinkListenTx(ctx, tx, userID, listenID, rec, store.AlbumChoice{ID: rel})
+			return err
+		}
+		res, err = store.LinkSourcesToTx(ctx, tx, userID, []store.SourceLink{{SourceID: sourceID, RecordingID: rec, ReleaseID: rel}}, true, "")
+		return err
+	})
+	return res, err
+}
+
+// Reread reads received texts again the way a new scrobble would be read,
+// as one edit, and hands them back to automatic reading: later changes to
+// readings and rules move them again. Text that can't be placed stays
+// where it is. It returns 0 when nothing could be placed.
+func Reread(ctx context.Context, db *store.DB, userID int64, sourceIDs []int64) (int64, error) {
+	var editID int64
+	err := db.Write(ctx, func(tx *sql.Tx) error {
+		var links []store.SourceLink
+		for _, id := range sourceIDs {
+			src, err := store.SourceTx(ctx, tx, id)
+			if err != nil || src.UserID != userID {
+				return store.ErrNotFound
+			}
+			rec, rel, err := placeTyped(ctx, tx, src, Text{src.Artist, src.Title, src.Album})
+			if errors.Is(err, ErrAmbiguous) || errors.Is(err, ErrNothingToGoOn) {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			links = append(links, store.SourceLink{SourceID: id, RecordingID: rec, ReleaseID: rel})
+		}
+		if len(links) == 0 {
+			return nil
+		}
+		what := "1 received text"
+		if len(links) > 1 {
+			what = fmt.Sprintf("%d received texts", len(links))
+		}
+		res, err := store.LinkSourcesToTx(ctx, tx, userID, links, false, "Read "+what+" again automatically")
+		editID = res.EditID
+		return err
+	})
+	return editID, err
+}

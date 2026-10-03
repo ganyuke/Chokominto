@@ -581,8 +581,8 @@ type entityPage struct {
 	CountedFrom []name
 	Members     []name
 	MemberOf    []name
-	By          []name // album artists
-	Albums      []name // albums a song is on
+	By          []name    // album artists
+	OnAlbums    []albumOn // albums a song is on, with its listens from each
 	Recordings  []recordingRow
 	AlbumRows   []albumRow // artists: albums credited to them
 	Recent      []listenRow
@@ -594,7 +594,15 @@ type entityPage struct {
 	Cover       string      // 440 px, or "" for a plain square
 }
 
+// albumOn is an album a song is on, with the song's listens from it.
+type albumOn struct {
+	Album   name
+	Listens int
+}
+
 type recordingRow struct {
+	Albums      []name // songs: the albums this version is on
+	Scrobbles   string // songs, for the owner: this version on the Scrobbles tab
 	Rank        int
 	Art         string
 	RecordingID int64
@@ -769,14 +777,22 @@ func (s *Server) songPage(w http.ResponseWriter, r *http.Request, viewer *store.
 	if err == nil {
 		p.Recordings = recordingRows(recs)
 		if err = s.addCovers(r.Context(), p.Recordings); err == nil && len(p.Recordings) > 0 {
-			// A song shows the cover of its first recording's album.
-			p.ShowCover, p.Cover = true, strings.Replace(p.Recordings[0].Art, "-64.", "-440.", 1)
-		}
-		var albums []store.Ref
-		if albums, err = s.db.SongReleases(r.Context(), e.ID); err == nil {
-			for _, a := range albums {
-				p.Albums = append(p.Albums, albumName(a))
+			// A song shows its own picture, or else the cover of its most
+			// listened version that has one.
+			p.ShowCover = true
+			for _, rec := range p.Recordings {
+				if rec.Art != "" {
+					p.Cover = strings.Replace(rec.Art, "-64.", "-440.", 1)
+					break
+				}
 			}
+		}
+		var albums []store.AlbumCount
+		if albums, err = s.db.SongAlbums(r.Context(), owner.ID, e.ID); err == nil {
+			for _, a := range albums {
+				p.OnAlbums = append(p.OnAlbums, albumOn{albumName(a.Ref), a.Listens})
+			}
+			err = s.versionAlbums(r.Context(), p.Recordings, e.ID, viewer != nil)
 		}
 	}
 	if err != nil {
@@ -784,6 +800,28 @@ func (s *Server) songPage(w http.ResponseWriter, r *http.Request, viewer *store.
 		return
 	}
 	s.render(w, http.StatusOK, "song", p)
+}
+
+// versionAlbums says which albums each version of a song is on, and for the
+// owner links each to its received text.
+func (s *Server) versionAlbums(ctx context.Context, rows []recordingRow, songID int64, owner bool) error {
+	ids := make([]int64, len(rows))
+	for i, r := range rows {
+		ids[i] = r.RecordingID
+	}
+	on, err := s.db.RecordingAlbums(ctx, ids)
+	if err != nil {
+		return err
+	}
+	for i := range rows {
+		for _, a := range on[rows[i].RecordingID] {
+			rows[i].Albums = append(rows[i].Albums, albumName(a))
+		}
+		if owner {
+			rows[i].Scrobbles = fmt.Sprintf("/song/%d/scrobbles#v%d", songID, rows[i].RecordingID)
+		}
+	}
+	return nil
 }
 
 func (s *Server) albumPage(w http.ResponseWriter, r *http.Request, viewer *store.User, owner store.User) {

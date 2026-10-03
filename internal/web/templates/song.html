@@ -5,12 +5,12 @@
 {{with .Name.Other}}{{if otherNames}}<p class="also-known muted">{{.}}</p>{{end}}{{end}}
 <div class="entity">
 <div>
-<h2>Recordings</h2>
+<h2 id="versions">Versions</h2>
 <div class="table-scroll">
 <table class="table">
-<thead><tr><th scope="col" class="wide">Artist</th><th scope="col" class="wide">Version</th><th scope="col" class="num">Listens</th></tr></thead>
+<thead><tr><th scope="col" class="thumb"><span class="visually-hidden">Picture</span></th><th scope="col" class="wide">Version</th><th scope="col" class="wide">Artist</th><th scope="col" class="album">Album</th><th scope="col" class="num">Listens</th></tr></thead>
 <tbody>
-{{range .Recordings}}<tr><td>{{template "names" .Artists}}</td><td>{{dash .Version}}</td><td class="num">{{num .Listens}}</td></tr>
+{{range .Recordings}}<tr>{{template "thumb" .Art}}<td>{{if .Version}}{{.Version}}{{else}}<span class="muted">Main version</span>{{end}}</td><td>{{template "names" .Artists}}</td><td>{{with .Albums}}{{template "names" .}}{{else}}—{{end}}</td><td class="num">{{if .Scrobbles}}<a href="{{.Scrobbles}}">{{num .Listens}}</a>{{else}}{{num .Listens}}{{end}}</td></tr>
 {{end}}</tbody>
 </table>
 </div>
@@ -22,7 +22,7 @@
 {{if .ShowCover}}{{template "cover" .Cover}}{{end}}
 <table>
 {{with .Labels}}<tr><th scope="row">Labels</th><td>{{range $i, $l := .}}{{if $i}}, {{end}}{{$l}}{{end}}</td></tr>{{end}}
-{{with .Albums}}<tr><th scope="row">On</th><td>{{template "names" .}}</td></tr>{{end}}
+{{with .OnAlbums}}<tr><th scope="row">Albums</th><td><ul class="plain">{{range .}}<li>{{template "name" .Album}} <span class="muted">{{num .Listens}}</span></li>{{end}}</ul></td></tr>{{end}}
 </table>
 </aside>
 </div>

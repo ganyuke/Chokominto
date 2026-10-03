@@ -1,47 +1,98 @@
+{{define "scope"}}{{with .Scope}}<input type="hidden" name="scope" value="{{.}}">{{end}}{{end}}
+
 {{define "content"}}
 <h1>Fix listen</h1>
 
-<h2 id="received">Received</h2>
+<h2 id="received">Received text</h2>
 <table class="table kv">
 <tbody>
 {{range .Received}}<tr><th scope="row">{{.Label}}</th><td>{{dash .Value}}</td></tr>
 {{end}}{{with .PageURL}}<tr><th scope="row">Page</th><td><a href="{{.}}" rel="noreferrer noopener">{{.}}</a></td></tr>{{end}}
 </tbody>
 </table>
+{{if gt .Sent 1}}<p>Your scrobbler sent this exact artist, title and album {{num .Sent}} times. <a href="{{.SentHref}}">See all {{num .Sent}} listens</a></p>
+{{else}}<p>Only this listen was sent with this exact artist, title and album.</p>{{end}}
+
+<h2 id="scope">Scope</h2>
+{{if .Alone}}
+<p>This listen was fixed alone. It no longer follows the {{if eq .Same 1}}other listen{{else}}other {{num .Same}} listens{{end}} sent with the same text.</p>
+<form class="actions" method="post" action="{{.Action}}/follow"><button type="submit">Follow the text again</button>
+<p class="help">Puts this listen back where the others sent with the same text are.</p></form>
+{{with .Others}}<form class="actions" method="post" action="{{$.Action}}/same"><button type="submit">Do the same for the others</button>
+<p class="help">Moves {{.}} to where this listen is now. After that, the page offers rules for similar listens.</p></form>{{end}}
+{{else}}
+<p>Pick what the changes below apply to, before making one.</p>
+<ul class="plain scope" aria-label="Scope">
+{{range .Scopes}}<li><a href="{{.Href}}"{{if .Current}} aria-current="true"{{end}}>{{.Label}}</a>{{if .Current}} <span class="muted">(picked)</span>{{end}}<span class="help">{{.Help}}</span></li>
+{{end}}</ul>
+{{end}}
+<p class="help">{{.ScopeHelp}}</p>
 
 <h2 id="linked">Linked to</h2>
 {{if .Linked}}
-<p>{{template "name" (withVersion .Song .Version)}} — {{template "names" .Artists}}{{with .Album}} — {{template "name" .}}{{end}}</p>
+<table class="table kv">
+<tbody>
+<tr><th scope="row">Song</th><td>{{template "name" .Song}}</td></tr>
+<tr><th scope="row">Version</th><td>{{if .Version}}{{.Version}}{{else}}<span class="muted">Main version</span>{{end}}</td></tr>
+<tr><th scope="row">Artist</th><td>{{template "names" .Artists}}</td></tr>
+<tr><th scope="row">Album</th><td>{{with .Album}}{{template "name" .}}{{else}}—{{end}}</td></tr>
+<tr><th scope="row">Linked by</th><td>{{if .By.Href}}<a href="{{.By.Href}}">{{.By.Text}}</a>{{else}}{{.By.Text}}{{end}}</td></tr>
+</tbody>
+</table>
+<p><a href="{{.SongEdit}}">Edit song</a> (name, version names, credited artists, picture){{with .AlbumEdit}} · <a href="{{.}}">Edit album</a>{{end}} · <a href="{{.Scrobbles}}">Scrobbles of this song</a></p>
 {{else}}
 <p>Not linked to a song yet.</p>
 {{end}}
-{{if gt .Same 1}}<p class="help">{{num .Same}} listens have exactly this text. Linking one links them all.</p>{{end}}
 
+{{if or .Offers .Saved .NoRule}}
+<h2 id="remember">Rules for similar listens</h2>
+{{with .Saved}}<p>Rule saved with the move: {{.}}. <form class="inline" method="post" action="/changes/{{$.SavedUndo}}/undo"><input type="hidden" name="back" value="{{$.Action}}/fix"><button type="submit">Undo the rule</button></form></p>{{end}}
+{{if .NoRule}}<p>The listens moved, but no rule was saved. Another song by the same artists has this name, so a rule on the name alone would catch both.</p>{{end}}
+{{end}}
 {{if .Offers}}
-<h2 id="remember">Remember this?</h2>
+<p class="help">A rule does the same for other scrobbles, now and later. Saved rules are listed in <a href="/settings#rules">Settings</a>.</p>
 <div class="table-scroll">
 <table class="table">
 <tbody>
 {{range .Offers}}<tr><td class="fill">{{.Text}}{{if .Listens}} <span class="muted">(moves {{num .Listens}} more {{if eq .Listens 1}}listen{{else}}listens{{end}})</span>{{end}}</td>
-<td class="action"><form class="inline" method="post" action="{{$.Action}}/remember"><input type="hidden" name="kind" value="{{.Kind}}"><input type="hidden" name="recording" value="{{$.Target}}"><button type="submit">Remember</button></form></td></tr>
+<td class="action"><form class="inline" method="post" action="{{$.Action}}/remember"><input type="hidden" name="kind" value="{{.Kind}}"><input type="hidden" name="recording" value="{{$.Target}}"><button type="submit">Save rule</button></form></td></tr>
 {{end}}</tbody>
 </table>
 </div>
 {{end}}
 
-<h2 id="link">Link to another song</h2>
-<form class="search" method="get" action="{{.Action}}/fix" role="search">
+{{if .Versions}}
+<h2 id="version">Version</h2>
+<p class="help">Every version of {{.Song.Name}}. For the right song but the wrong version, pick the version that was heard.</p>
+<form method="post" action="{{.Action}}/link">
+{{template "scope" .}}
+<div class="table-scroll">
+<table class="table">
+<thead><tr><th scope="col" class="wide">Version</th><th scope="col" class="wide">Artist</th><th scope="col" class="num">Listens</th><th scope="col" class="action"><span class="muted">Action</span></th></tr></thead>
+<tbody>
+{{range .Versions}}<tr><td>{{if .Version}}{{.Version}}{{else}}<span class="muted">Main version</span>{{end}}</td><td>{{template "names" .Artists}}</td><td class="num">{{num .Listens}}</td><td class="action">{{if .Current}}<strong>Current</strong>{{else}}<button type="submit" name="recording" value="{{.RecordingID}}">{{$.Move}}</button>{{end}}</td></tr>
+{{end}}</tbody>
+</table>
+</div>
+</form>
+{{end}}
+
+<h2 id="link">Song</h2>
+<p class="help">{{.SongHelp}}</p>
+<form class="search" method="get" action="{{.Action}}/fix#link" role="search">
+{{template "scope" .}}
 <label for="q">Song, artist or album, in any script</label>
 <div class="search-row"><input type="text" id="q" name="q" value="{{.Query}}"><button type="submit">Search</button></div>
 </form>
 {{if .Results}}
 <form method="post" action="{{.Action}}/link">
+{{template "scope" .}}
 <input type="hidden" name="q" value="{{.Query}}">
 <div class="table-scroll">
 <table class="table">
-<thead><tr><th scope="col" class="wide">Song</th><th scope="col" class="wide">Artist</th><th scope="col" class="num">Listens</th><th scope="col" class="action"><span class="muted">Action</span></th></tr></thead>
+<thead><tr><th scope="col" class="wide">Song</th><th scope="col" class="wide">Version</th><th scope="col" class="wide">Artist</th><th scope="col" class="num">Listens</th><th scope="col" class="action"><span class="muted">Action</span></th></tr></thead>
 <tbody>
-{{range .Results}}<tr><td>{{template "name" (withVersion .Song .Version)}}</td><td>{{template "names" .Artists}}</td><td class="num">{{num .Listens}}</td><td class="action"><button type="submit" name="recording" value="{{.RecordingID}}">Link</button></td></tr>
+{{range .Results}}<tr><td>{{template "name" .Song}}</td><td>{{if .Version}}{{.Version}}{{else}}<span class="muted">Main version</span>{{end}}</td><td>{{template "names" .Artists}}</td><td class="num">{{num .Listens}}</td><td class="action"><button type="submit" name="recording" value="{{.RecordingID}}">{{$.Move}}</button></td></tr>
 {{end}}</tbody>
 </table>
 </div>
@@ -49,13 +100,52 @@
 {{else if .Query}}
 <p>Nothing else matches “{{.Query}}”.</p>
 {{end}}
-<form class="actions" method="post" action="{{.Action}}/new-song">
-<button type="submit">New song</button>
-<p class="help">For a song that isn't here yet, or one that was mixed up with another of the same name.</p>
+
+{{if .Linked}}
+<h2 id="album">Album</h2>
+<p class="help">{{.AlbumHelp}}</p>
+<form class="search" method="get" action="{{.Action}}/fix#album" role="search">
+{{template "scope" .}}
+<input type="hidden" name="q" value="{{.Query}}">
+<label for="album-q">Album name, in any script</label>
+<div class="search-row"><input type="text" id="album-q" name="album" value="{{.AlbumQuery}}"><button type="submit">Search</button></div>
+</form>
+<form method="post" action="{{.Action}}/album">
+{{template "scope" .}}
+{{if .Albums}}
+<div class="table-scroll">
+<table class="table">
+<thead><tr><th scope="col" class="fill">Album</th><th scope="col" class="action"><span class="muted">Action</span></th></tr></thead>
+<tbody>
+{{range .Albums}}<tr><td class="fill">{{template "name" .Album}}{{with .Context}} <span class="muted">({{.}})</span>{{end}}</td><td class="action"><button type="submit" name="to" value="{{.ID}}">Put on this album</button></td></tr>
+{{end}}</tbody>
+</table>
+</div>
+{{else if .AlbumQuery}}<p>No other album matches “{{.AlbumQuery}}”.</p>{{end}}
+{{if .Album}}<p><button type="submit" name="to" value="none">No album</button></p>{{end}}
+</form>
+{{end}}
+
+<h2 id="correction">Correction</h2>
+<p class="help">{{.CorrectHelp}}</p>
+<form class="form" method="post" action="{{.Action}}/correct">
+{{template "scope" .}}
+<div class="field"><label for="correct-artist">Artist</label><input type="text" id="correct-artist" name="artist" value="{{.Correct.Artist}}"></div>
+<div class="field"><label for="correct-title">Title</label><input type="text" id="correct-title" name="title" value="{{.Correct.Title}}"></div>
+<div class="field"><label for="correct-album">Album</label><input type="text" id="correct-album" name="album_text" value="{{.Correct.Album}}"></div>
+<button type="submit">Link as typed</button>
 </form>
 
-<h2 id="delete">Delete</h2>
-<form method="post" action="{{.Action}}/delete">
-<button class="danger" type="submit">Delete listen</button>
+<h2 id="new-song">New song</h2>
+<form class="actions" method="post" action="{{.Action}}/new-song">
+{{template "scope" .}}
+<button type="submit">New song</button>
+<p class="help">{{.NewSongHelp}}</p>
+</form>
+
+<h2 id="delete">Deletion</h2>
+<form class="actions" method="post" action="{{.Action}}/delete">
+<button class="danger" type="submit">Delete this listen</button>
+<p class="help">{{.DeleteHelp}}</p>
 </form>
 {{end}}

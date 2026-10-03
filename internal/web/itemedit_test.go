@@ -59,7 +59,7 @@ func TestItemEditPages(t *testing.T) {
 		t.Fatalf("rename not shown:\n%s", body)
 	}
 	loc = edit(songPath, url.Values{"do": {"rename"}, "name": {" "}})
-	if _, body, _ := e.get(loc); !strings.Contains(body, "Give it a name.") {
+	if _, body, _ := e.get(loc); !strings.Contains(body, "Type a name first.") {
 		t.Fatal("empty name not refused")
 	}
 

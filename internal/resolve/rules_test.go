@@ -179,7 +179,7 @@ func TestNoTitleRulesWhenAmbiguous(t *testing.T) {
 	}
 	// Split: the other game's listens get a song of their own.
 	src := e.sourceOf("Pedro Macedo Camacho", "Main Theme", "Other Game")
-	rec, _, err := NewSong(ctx, e.db, e.user, src)
+	rec, _, err := NewSong(ctx, e.db, e.user, src, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +204,7 @@ func TestNewSongUndo(t *testing.T) {
 	src := e.sourceOf("Ayase", "アイドル", "")
 	before := e.q(`SELECT id || ' ' || recording_id FROM sources`)
 	songs := e.id(`SELECT count(*) FROM songs`)
-	_, res, err := NewSong(ctx, e.db, e.user, src)
+	_, res, err := NewSong(ctx, e.db, e.user, src, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

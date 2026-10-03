@@ -249,7 +249,7 @@ func TestNamesAndCleanup(t *testing.T) {
 		t.Fatalf("shown %q / %q", e.Name, e.OtherNames)
 	}
 	a.tool("remove_name", map[string]any{"kind": "song", "id": song, "name_id": ids["fukashigi no carte lofi"]}, false)
-	if text := a.tool("set_name", map[string]any{"kind": "song", "id": song, "name_id": 999}, true); !strings.Contains(text, "isn't one of its names") {
+	if text := a.tool("set_name", map[string]any{"kind": "song", "id": song, "name_id": 999}, true); !strings.Contains(text, "isn't one of the names there") {
 		t.Fatal(text)
 	}
 

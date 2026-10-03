@@ -182,7 +182,7 @@ func snapshot(t *testing.T, db *DB) string {
 	for _, q := range []string{
 		`SELECT id, user_id, name, hide_default, position FROM labels ORDER BY id`,
 		`SELECT label_id, entity_type, entity_id FROM entity_labels ORDER BY 1, 2, 3`,
-		`SELECT id, deleted_by IS NULL, recording_id, release_id FROM listens ORDER BY id`,
+		`SELECT id, deleted_by IS NULL, recording_id, release_id, fixed_by FROM listens ORDER BY id`,
 		`SELECT user_id, listen_count FROM user_stats ORDER BY 1`,
 		`SELECT id, recording_id, release_id, linked_by FROM sources ORDER BY id`,
 		`SELECT id, kind, name, other_names, pinned_alias, mbid, merged_into FROM artists ORDER BY id`,

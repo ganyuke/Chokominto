@@ -1,0 +1,29 @@
+{{define "content"}}
+<div class="title-line"><h1>{{.Name.Name}}</h1>{{template "view-tabs" .Tabs}}</div>
+{{with .Name.Other}}{{if otherNames}}<p class="also-known muted">{{.}}</p>{{end}}{{end}}
+{{if eq .Kind "song"}}<p>The exact artist, title and album your scrobblers sent for this song, under the version each one is linked to.</p>
+{{else}}<p>The exact artist, title and album your scrobblers sent for the listens on this album.</p>{{end}}
+{{if not .Groups}}<p>No listens yet.</p>{{end}}
+{{range .Groups}}
+{{if eq $.Kind "song"}}<h2 id="{{.Anchor}}">{{if .Version}}{{.Version}}{{else}}Main version{{end}} <span class="muted">{{range $i, $a := .Artists}}{{if $i}}, {{end}}{{$a.Name}}{{end}} · {{num .Listens}} {{if eq .Listens 1}}listen{{else}}listens{{end}}</span></h2>
+{{else}}<h2 id="{{.Anchor}}">Received text</h2>{{end}}
+{{template "sent-table" (sentTable . (eq $.Kind "release"))}}
+{{end}}
+{{if .Groups}}{{template "destination" .}}{{end}}
+{{if .Rules}}
+<h2 id="rules">Rules</h2>
+<p class="help">Rules that link new scrobbles to this song. All rules are in <a href="/settings#rules">Settings</a>.</p>
+<div class="table-scroll">
+<table class="table">
+<thead><tr><th scope="col" class="fill">Rule</th><th scope="col" class="num">Listens</th><th scope="col" class="action"><span class="muted">Action</span></th></tr></thead>
+<tbody>
+{{range .Rules}}<tr>
+<td class="fill">{{.Text}}{{if not .On}} <span class="muted">(off)</span>{{end}}</td>
+<td class="num">{{num .Listens}}</td>
+<td class="action"><form class="inline" method="post" action="/settings/rules/{{.ID}}">{{if .On}}<button type="submit" name="action" value="off">Turn off</button>{{else}}<button type="submit" name="action" value="on">Turn on</button>{{end}} <button class="danger" type="submit" name="action" value="delete">Delete</button></form></td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+{{end}}
+{{end}}

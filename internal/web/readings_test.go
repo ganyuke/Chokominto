@@ -26,7 +26,7 @@ func TestReadingSettings(t *testing.T) {
 	e.scrobbleNow([3]string{"CHiCO, HoneyWorks", "ツーマンライブ", ""})
 	_, body, _ := e.get("/settings")
 	for _, want := range []string{"Reading scrobbles", "Lists with commas", "Asami Seto, Nao Toyama → two artists",
-		`name="on" value="comma" checked`, `name="on" value="amp">`, "Titles in two languages", "Your rules", "None yet."} {
+		`name="on" value="comma" checked`, `name="on" value="amp">`, "Titles in two languages", `<h2 id="rules">Rules</h2>`, "No rules saved yet."} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("settings missing %q", want)
 		}

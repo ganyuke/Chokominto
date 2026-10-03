@@ -86,6 +86,26 @@ type OwnRule struct {
 	Text    string
 	On      bool
 	Listens int // listens it applies to, not counting ones linked by hand
+	// The recording a link rule links to, 0 for other rules.
+	RecordingID int64
+}
+
+// RuleTexts describes each of the owner's rules in words, by rule.
+func RuleTexts(ctx context.Context, db *store.DB, userID int64) (map[int64]string, error) {
+	rules, err := db.AllRules(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	out := map[int64]string{}
+	for _, r := range rules {
+		if isReading(r) {
+			continue
+		}
+		if out[r.ID], err = describeRule(ctx, db, r); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 // ReadingSettings returns the built-in readings and the owner's own rules.
@@ -119,7 +139,7 @@ func ReadingSettings(ctx context.Context, db *store.DB, userID int64) ([]Reading
 		if err != nil {
 			return nil, nil, err
 		}
-		o := OwnRule{ID: r.ID, Text: text, On: r.Enabled}
+		o := OwnRule{ID: r.ID, Text: text, On: r.Enabled, RecordingID: r.RecordingID}
 		var ids []int64
 		for _, s := range affected(r, r.RecordingID, sources) {
 			ids = append(ids, s.ID)

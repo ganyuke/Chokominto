@@ -168,10 +168,11 @@ type Listen struct {
 	Incomplete  bool
 	RecordingID int64 // 0 while not linked
 	ReleaseID   int64 // 0 when there's no album
+	Fixed       bool  // linked on its own, apart from its text
 }
 
 const listenCols = `l.id, l.listened_at, l.received_at, s.artist_text, s.title_text, s.album_text, s.msid, l.origin, l.incomplete,
-	coalesce(l.recording_id, 0), coalesce(l.release_id, 0)`
+	coalesce(l.recording_id, 0), coalesce(l.release_id, 0), l.fixed_by IS NOT NULL`
 
 func (db *DB) scanListens(ctx context.Context, q string, args ...any) ([]Listen, error) {
 	rows, err := db.r.QueryContext(ctx, q, args...)
@@ -182,7 +183,7 @@ func (db *DB) scanListens(ctx context.Context, q string, args ...any) ([]Listen,
 	var ls []Listen
 	for rows.Next() {
 		var l Listen
-		if err := rows.Scan(&l.ID, &l.ListenedAt, &l.ReceivedAt, &l.Artist, &l.Title, &l.Album, &l.MSID, &l.Origin, &l.Incomplete, &l.RecordingID, &l.ReleaseID); err != nil {
+		if err := rows.Scan(&l.ID, &l.ListenedAt, &l.ReceivedAt, &l.Artist, &l.Title, &l.Album, &l.MSID, &l.Origin, &l.Incomplete, &l.RecordingID, &l.ReleaseID, &l.Fixed); err != nil {
 			return nil, err
 		}
 		ls = append(ls, l)
@@ -213,6 +214,8 @@ type ListenRange struct {
 	After  *Cursor
 	Oldest bool
 	Limit  int
+	// SourceID, when set, keeps only listens sent with that received text.
+	SourceID int64
 }
 
 func (db *DB) Listens(ctx context.Context, userID int64, r ListenRange) ([]Listen, error) {
@@ -226,12 +229,22 @@ func (db *DB) Listens(ctx context.Context, userID int64, r ListenRange) ([]Liste
 		where = append(where, "(l.listened_at, l.id) > (?, ?)")
 		args = append(args, r.After.TS, r.After.ID)
 	}
+	if r.SourceID != 0 {
+		where = append(where, "l.source_id = ?")
+		args = append(args, r.SourceID)
+	}
 	order := "DESC"
 	if r.Oldest {
 		order = "ASC"
 	}
+	// One text's listens are found by the text. By time, SQLite would walk
+	// the whole history looking for them.
+	index := ""
+	if r.SourceID != 0 {
+		index = " INDEXED BY listens_by_source"
+	}
 	q := `SELECT ` + listenCols + `
-	      FROM listens l JOIN sources s ON s.id = l.source_id
+	      FROM listens l` + index + ` JOIN sources s ON s.id = l.source_id
 	      WHERE l.user_id = ? AND l.deleted_by IS NULL`
 	for _, w := range where {
 		q += " AND " + w

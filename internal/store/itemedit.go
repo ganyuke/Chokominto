@@ -338,9 +338,9 @@ func (db *DB) SetNames(ctx context.Context, userID int64, kind string, id int64,
 			if n.Shown != a.Shown {
 				after["shown"] = boolInt(n.Shown)
 				if n.Shown {
-					said = append(said, fmt.Sprintf("listed %s on its page", a.Name))
+					said = append(said, fmt.Sprintf("listed %s on the page", a.Name))
 				} else {
-					said = append(said, fmt.Sprintf("stopped listing %s on its page", a.Name))
+					said = append(said, fmt.Sprintf("stopped listing %s on the page", a.Name))
 				}
 			}
 			if len(after) > 0 {
@@ -357,9 +357,9 @@ func (db *DB) SetNames(ctx context.Context, userID int64, kind string, id int64,
 					return "", ErrNotFound
 				}
 				v = a.ID
-				said = append(said, fmt.Sprintf("showed %s under its name in lists", a.Name))
+				said = append(said, fmt.Sprintf("showed %s under the main name in lists", a.Name))
 			} else {
-				said = append(said, "showed no other name under it in lists")
+				said = append(said, "showed no other name in lists")
 			}
 			if err := p.update(t.entity, id, map[string]any{"second_alias": v, "second_set": int64(1)}); err != nil {
 				return "", err
@@ -373,7 +373,7 @@ func (db *DB) SetNames(ctx context.Context, userID int64, kind string, id int64,
 			if err := p.update(t.entity, id, map[string]any{"pinned_alias": a.ID}); err != nil {
 				return "", err
 			}
-			said = append(said, "showed it as "+a.Name)
+			said = append(said, "made "+a.Name+" the main name")
 		}
 		if len(said) == 0 {
 			return "", nil

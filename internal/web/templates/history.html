@@ -1,5 +1,6 @@
 {{define "content"}}
 <h1>History</h1>
-{{template "now-playing" .Playing}}
+{{with .Text}}<p>Only the {{if eq .Listens 1}}listen{{else}}{{num .Listens}} listens{{end}} sent as “{{.Title}}” by {{dash .Artist}}{{with .Album}}, on {{.}}{{end}}. <a href="/history">All listens</a></p>
+{{else}}{{template "now-playing" .Playing}}{{end}}
 <div{{if .Live}} data-live="history"{{end}}>{{template "history-days" .}}</div>
 {{end}}

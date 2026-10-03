@@ -1,5 +1,6 @@
 {{define "content"}}
 <h1>Settings</h1>
+<nav class="tabs" aria-label="Contents"><a href="#scrobblers">Scrobblers</a><span class="sep" aria-hidden="true">│</span><a href="#time-zone">Time</a><span class="sep" aria-hidden="true">│</span><a href="#labels">Labels</a><span class="sep" aria-hidden="true">│</span><a href="#reading">Reading scrobbles</a><span class="sep" aria-hidden="true">│</span><a href="#rules">Rules</a><span class="sep" aria-hidden="true">│</span><a href="/settings/links">Fixed links</a><span class="sep" aria-hidden="true">│</span><a href="#names">Other names</a><span class="sep" aria-hidden="true">│</span><a href="#pictures">Pictures</a><span class="sep" aria-hidden="true">│</span><a href="#agents">AI agents</a><span class="sep" aria-hidden="true">│</span><a href="#display-name">Name</a><span class="sep" aria-hidden="true">│</span><a href="#password">Password</a></nav>
 
 <h2 id="scrobblers">Scrobblers</h2>
 {{with .NewToken}}
@@ -93,14 +94,16 @@
 <p><button type="submit">Save</button></p>
 <p class="help">You'll see examples from your own listens before anything changes.</p>
 </form>
-<h3 id="rules">Your rules</h3>
+<h2 id="rules">Rules</h2>
+<p>A rule links every scrobble that matches it, now and later. Rules are saved from a listen's Fix page, under "Rules for similar listens", after linking by hand.</p>
 {{if .OwnRules}}
 <div class="table-scroll">
 <table class="table">
-<thead><tr><th scope="col" class="fill">Rule</th><th scope="col" class="num">Listens</th><th scope="col" class="action"><span class="muted">Action</span></th></tr></thead>
+<thead><tr><th scope="col" class="fill">Rule</th><th scope="col" class="wide">Song</th><th scope="col" class="num">Listens</th><th scope="col" class="action"><span class="muted">Action</span></th></tr></thead>
 <tbody>
 {{range .OwnRules}}<tr>
 <td class="fill">{{.Text}}{{if not .On}} <span class="muted">(off)</span>{{end}}</td>
+<td>{{with .Song}}{{template "name" .}}{{else}}—{{end}}</td>
 <td class="num">{{num .Listens}}</td>
 <td class="action"><form class="inline" method="post" action="/settings/rules/{{.ID}}">{{if .On}}<button type="submit" name="action" value="off">Turn off</button>{{else}}<button type="submit" name="action" value="on">Turn on</button>{{end}} <button class="danger" type="submit" name="action" value="delete">Delete</button></form></td>
 </tr>
@@ -108,11 +111,13 @@
 </table>
 </div>
 {{else}}
-<p>None yet. After you link a listen on its Fix page, you can have it remembered for similar listens.</p>
+<p>No rules saved yet.</p>
 {{end}}
+<h3 id="fixed-links">Fixed links</h3>
+<p>{{if .FixedLinks}}{{num .FixedLinks}} received {{if eq .FixedLinks 1}}text has a link{{else}}texts have a link{{end}} set by hand, in Review, by a merge or by an agent. Reading scrobbles never moves these. <a href="/settings/links">See fixed links</a>{{else}}No received text has a link set by hand yet.{{end}}</p>
 
 <h2 id="names">Other names</h2>
-<p>Songs, artists and albums can have more than one name, like a romaji and an original-script title. Pages show the main one. You can also show others: one under each name in tables and rankings, and a list under the title on its own page. Choose which on its Edit tab.</p>
+<p>Songs, artists and albums can have more than one name, like a romaji and an original-script title. Pages show the main one. You can also show others: one under the main name in tables and rankings, and a list under the title on the song's, artist's or album's own page. Choose which on the Edit tab there.</p>
 <form method="post" action="/settings/names">
 {{if .User.ShowOtherNames}}<input type="hidden" name="on" value="0"><button type="submit">Hide other names</button>
 {{else}}<input type="hidden" name="on" value="1"><button type="submit">Show other names</button>{{end}}

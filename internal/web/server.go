@@ -93,6 +93,7 @@ func New(cfg config.Config, db *store.DB, np *listenbrainz.NowPlaying, log *slog
 	mux.HandleFunc("GET /art/candidate/{id}", s.member(s.candidateThumb))
 	mux.HandleFunc("POST /artist/{id}/picture", s.member(s.uploadPicture("artist")))
 	mux.HandleFunc("POST /album/{id}/picture", s.member(s.uploadPicture("release")))
+	mux.HandleFunc("POST /song/{id}/picture", s.member(s.uploadPicture("song")))
 	mux.HandleFunc("GET /{$}", s.viewer(s.home))
 	mux.HandleFunc("GET /top/songs", s.viewer(s.top("songs")))
 	mux.HandleFunc("GET /top/artists", s.viewer(s.top("artists")))
@@ -130,11 +131,21 @@ func New(cfg config.Config, db *store.DB, np *listenbrainz.NowPlaying, log *slog
 	mux.HandleFunc("GET /listen/{id}/fix", s.member(s.fixPage))
 	mux.HandleFunc("POST /listen/{id}/link", s.member(s.fixLink))
 	mux.HandleFunc("POST /listen/{id}/new-song", s.member(s.fixNewSong))
+	mux.HandleFunc("POST /listen/{id}/album", s.member(s.fixAlbum))
+	mux.HandleFunc("POST /listen/{id}/correct", s.member(s.fixCorrect))
+	mux.HandleFunc("POST /listen/{id}/follow", s.member(s.fixFollow))
+	mux.HandleFunc("POST /listen/{id}/same", s.member(s.fixSame))
 	mux.HandleFunc("POST /listen/{id}/remember", s.member(s.fixRemember))
 	mux.HandleFunc("POST /listen/{id}/delete", s.member(s.fixDelete))
 	mux.HandleFunc("GET /artist/{id}/edit", s.member(s.editView("artist")))
 	mux.HandleFunc("GET /song/{id}/edit", s.member(s.editView("song")))
 	mux.HandleFunc("GET /album/{id}/edit", s.member(s.editView("release")))
+	mux.HandleFunc("GET /song/{id}/scrobbles", s.member(s.scrobblesView("song")))
+	mux.HandleFunc("GET /album/{id}/scrobbles", s.member(s.scrobblesView("release")))
+	mux.HandleFunc("POST /song/{id}/scrobbles", s.member(s.scrobblesMove("song")))
+	mux.HandleFunc("POST /album/{id}/scrobbles", s.member(s.scrobblesMove("release")))
+	mux.HandleFunc("GET /settings/links", s.member(s.fixedLinks))
+	mux.HandleFunc("POST /settings/links", s.member(s.fixedLinksMove))
 	mux.HandleFunc("POST /artist/{id}/edit", s.member(s.itemEdit("artist")))
 	mux.HandleFunc("POST /song/{id}/edit", s.member(s.itemEdit("song")))
 	mux.HandleFunc("POST /album/{id}/edit", s.member(s.itemEdit("release")))
@@ -295,6 +306,9 @@ func (s *Server) loadTemplates() error {
 		"num":        func(n int) string { return numberPrinter.Sprintf("%d", n) },
 		"albumKinds": func() []option { return albumKindNames },
 		"pagePaths":  func() map[string]string { return pagePaths },
+		"sentTable": func(g sentGroup, showSong bool) map[string]any {
+			return map[string]any{"Rows": g.Rows, "Alone": g.Alone, "ShowSong": showSong}
+		},
 		"versionForm": func(path string, r store.SongRecording) map[string]any {
 			return map[string]any{"Path": path, "Recording": r}
 		},
@@ -307,7 +321,7 @@ func (s *Server) loadTemplates() error {
 		},
 	}
 	s.pages = map[string]*template.Template{}
-	for _, page := range []string{"home", "history", "top", "artist", "song", "album", "scrobble", "fix", "review", "musicbrainz", "itemedit", "login", "connect", "settings", "readings", "changes", "error", "setup"} {
+	for _, page := range []string{"home", "history", "top", "artist", "song", "album", "scrobble", "fix", "scrobbles", "links", "review", "musicbrainz", "itemedit", "login", "connect", "settings", "readings", "changes", "error", "setup"} {
 		t, err := template.New("").Funcs(funcs).ParseFS(templateFS, "templates/layout.html", "templates/partials.html", "templates/edit.html", "templates/"+page+".html")
 		if err != nil {
 			return err

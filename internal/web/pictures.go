@@ -43,6 +43,8 @@ type pictureData struct {
 	Online     bool   // looking for pictures online is on
 	Path       string // the item's page
 	Live       string // its name for /live
+	Song       bool   // a song: its own picture, or else an album's
+	FromAlbum  *name  // songs: the album whose cover shows now
 }
 
 type candidateRow struct {
@@ -52,8 +54,8 @@ type candidateRow struct {
 }
 
 func (s *Server) loadPicture(ctx context.Context, u *store.User, kind string, id int64) (*pictureData, error) {
-	if kind != "artist" && kind != "release" {
-		return nil, nil
+	if kind == "song" {
+		return s.loadSongPicture(ctx, u, id)
 	}
 	p := &pictureData{Online: u.FindArtwork, Path: fmt.Sprintf("%s/%d", pagePaths[kind], id), Live: fmt.Sprintf("picture:%s:%d", kind, id)}
 	a, chosen, err := s.db.ItemArtwork(ctx, kind, id)
@@ -77,6 +79,42 @@ func (s *Server) loadPicture(ctx context.Context, u *store.User, kind string, id
 		p.Looking, err = s.db.ArtworkLooking(ctx, kind, id)
 	}
 	return p, err
+}
+
+// loadSongPicture is the Picture part of a song's Edit view: the song's own
+// picture, or the album cover that shows in its place.
+func (s *Server) loadSongPicture(ctx context.Context, u *store.User, id int64) (*pictureData, error) {
+	p := &pictureData{Song: true, Path: fmt.Sprintf("/song/%d", id)}
+	a, _, err := s.db.ItemArtwork(ctx, "song", id)
+	if err != nil {
+		return nil, err
+	}
+	if a != nil {
+		p.Current, p.Chosen = artURL(*a, 440), true
+		return p, nil
+	}
+	recs, err := s.db.SongRecordings(ctx, u.ID, id)
+	if err != nil || len(recs) == 0 {
+		return p, err
+	}
+	covers, err := s.db.RecordingCoverSources(ctx, []int64{recs[0].RecordingID})
+	if err != nil {
+		return nil, err
+	}
+	c, ok := covers[recs[0].RecordingID]
+	if !ok {
+		return p, nil
+	}
+	p.Current = artURL(c.Artwork, 440)
+	albums, err := s.db.ReleaseRefs(ctx, []int64{c.ReleaseID})
+	if err != nil {
+		return nil, err
+	}
+	if al, ok := albums[c.ReleaseID]; ok {
+		n := albumName(al)
+		p.FromAlbum = &n
+	}
+	return p, nil
 }
 
 // candidateThumb serves a candidate's small picture. It's fetched once,
@@ -149,7 +187,7 @@ func (s *Server) showPicture(ctx context.Context, u *store.User, kind string, id
 		editID, err = store.SetArtworkTx(ctx, tx, u.ID, kind, id, artID, true, false)
 		return err
 	})
-	if err == nil {
+	if err == nil && kind != "song" {
 		err = s.db.ClearCandidates(ctx, kind, id)
 	}
 	return editID, err

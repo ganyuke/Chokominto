@@ -73,10 +73,10 @@ func TestFixPage(t *testing.T) {
 		t.Fatalf("listen on %d, want %d", got, target)
 	}
 	_, body, _ = e.get(h.Get("Location"))
-	if !strings.Contains(body, "Linked 1 listen to アイドル.") || !strings.Contains(body, `name="back"`) {
+	if !strings.Contains(body, "Moved 1 listen from Idol to アイドル.") || !strings.Contains(body, `name="back"`) {
 		t.Fatal("no notice with Undo")
 	}
-	if !strings.Contains(body, "Remember this?") || !strings.Contains(body, "Always link “Idol” by YOASOBI here, whatever the album") ||
+	if !strings.Contains(body, "Rules for similar listens") || !strings.Contains(body, "Always link “Idol” by YOASOBI here, whatever the album") ||
 		!strings.Contains(body, "(moves 1 more listen)") {
 		t.Fatalf("no offers:\n%s", body)
 	}

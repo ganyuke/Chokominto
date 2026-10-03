@@ -1,0 +1,20 @@
+{{define "content"}}
+<h1>Fixed links</h1>
+<p>Received text whose link was set by you or an agent: on a Fix page, in Review, by a merge or by an edit. Reading scrobbles never moves these, whatever the settings and rules say.{{if .Total}} {{num .Total}} in all.{{end}}</p>
+<form class="search" method="get" action="/settings/links" role="search">
+<label for="find">Artist, title or album received</label>
+<div class="search-row"><input type="text" id="find" name="find" value="{{.Find}}"><button type="submit">Search</button></div>
+</form>
+{{if .Groups}}
+{{range .Groups}}{{template "sent-table" (sentTable . true)}}{{end}}
+<nav class="pager" aria-label="Pages">
+<span>{{with .Prev}}<a href="{{.}}" rel="prev">‹ Previous</a>{{end}}</span>
+<span>{{with .Next}}<a href="{{.}}" rel="next">Next ›</a>{{end}}</span>
+</nav>
+<h2 id="reread">Automatic reading</h2>
+<p class="help">Reads the checked texts again the way a new scrobble is read, and lets settings and rules move them from then on.</p>
+<p><button type="submit" form="move" name="do" value="reread">Read checked again automatically</button></p>
+{{template "destination" .}}
+{{else if .Find}}<p>Nothing matches “{{.Find}}”.</p>
+{{else}}<p>No fixed links yet.</p>{{end}}
+{{end}}

@@ -20,7 +20,7 @@ type Artwork struct {
 	Origin string
 }
 
-var artworkTables = map[string]string{"artist": "artists", "release": "releases"}
+var artworkTables = map[string]string{"artist": "artists", "release": "releases", "song": "songs"}
 
 // AddArtworkTx records a stored picture and returns its id. A picture
 // that's there already keeps its first row.
@@ -124,8 +124,9 @@ func (db *DB) UnusedArtwork(ctx context.Context) ([]Artwork, error) {
 	rows, err := db.r.QueryContext(ctx, `WITH used(id) AS (
 		  SELECT artwork_id FROM artists WHERE artwork_id IS NOT NULL
 		  UNION SELECT artwork_id FROM releases WHERE artwork_id IS NOT NULL
-		  UNION SELECT json_extract(before, '$.artwork_id') FROM edit_changes WHERE tbl IN ('artists', 'releases')
-		  UNION SELECT json_extract(after, '$.artwork_id') FROM edit_changes WHERE tbl IN ('artists', 'releases'))
+		  UNION SELECT artwork_id FROM songs WHERE artwork_id IS NOT NULL
+		  UNION SELECT json_extract(before, '$.artwork_id') FROM edit_changes WHERE tbl IN ('artists', 'releases', 'songs')
+		  UNION SELECT json_extract(after, '$.artwork_id') FROM edit_changes WHERE tbl IN ('artists', 'releases', 'songs'))
 		SELECT id, sha256, format, width, height, origin FROM artwork
 		WHERE id NOT IN (SELECT id FROM used WHERE id IS NOT NULL) ORDER BY id`)
 	if err != nil {
@@ -148,7 +149,8 @@ func (db *DB) DeleteArtwork(ctx context.Context, id int64) error {
 	return db.Write(ctx, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, `DELETE FROM artwork WHERE id = ?
 			AND NOT EXISTS (SELECT 1 FROM artists WHERE artwork_id = ?1)
-			AND NOT EXISTS (SELECT 1 FROM releases WHERE artwork_id = ?1)`, id)
+			AND NOT EXISTS (SELECT 1 FROM releases WHERE artwork_id = ?1)
+			AND NOT EXISTS (SELECT 1 FROM songs WHERE artwork_id = ?1)`, id)
 		return err
 	})
 }
@@ -333,32 +335,83 @@ func (db *DB) SetShowOtherNames(ctx context.Context, userID int64, on bool) erro
 	})
 }
 
-// RecordingCovers returns a cover for each recording: the picture of the
-// first of its albums that has one.
+// Cover is the picture shown for a recording, and where it comes from.
+type Cover struct {
+	Artwork
+	ReleaseID int64 // the album whose cover it is, 0 for the song's own picture
+}
+
+// RecordingCovers returns a cover for each recording: its song's own
+// picture, or else the cover of the album it's most listened on that has
+// one.
 func (db *DB) RecordingCovers(ctx context.Context, ids []int64) (map[int64]Artwork, error) {
-	out := map[int64]Artwork{}
+	covers, err := db.RecordingCoverSources(ctx, ids)
+	out := make(map[int64]Artwork, len(covers))
+	for id, c := range covers {
+		out[id] = c.Artwork
+	}
+	return out, err
+}
+
+// RecordingCoverSources is RecordingCovers with where each cover is from.
+func (db *DB) RecordingCoverSources(ctx context.Context, ids []int64) (map[int64]Cover, error) {
+	out := map[int64]Cover{}
 	if len(ids) == 0 {
 		return out, nil
 	}
-	rows, err := db.r.QueryContext(ctx, `SELECT rt.recording_id, a.id, a.sha256, a.format, a.width, a.height, a.origin
+	// The song's own picture sorts first (release 0), then albums by the
+	// recording's listens there.
+	rows, err := db.r.QueryContext(ctx, `SELECT rec.id, 0, a.id, a.sha256, a.format, a.width, a.height, a.origin, 1 AS own, 0 AS n
+		FROM recordings rec JOIN songs s ON s.id = rec.song_id JOIN artwork a ON a.id = s.artwork_id
+		WHERE rec.id IN (SELECT value FROM json_each(?1))
+		UNION ALL
+		SELECT rt.recording_id, r.id, a.id, a.sha256, a.format, a.width, a.height, a.origin, 0,
+		  coalesce((SELECT n FROM listen_totals lt WHERE lt.user_id = r.user_id AND lt.recording_id = rt.recording_id AND lt.release_id = r.id), 0)
 		FROM release_tracks rt JOIN releases r ON r.id = rt.release_id AND r.merged_into IS NULL
 		JOIN artwork a ON a.id = r.artwork_id
-		WHERE rt.recording_id IN (SELECT value FROM json_each(?)) ORDER BY rt.recording_id, r.id`, jsonIDs(ids))
+		WHERE rt.recording_id IN (SELECT value FROM json_each(?1))
+		ORDER BY 1, own DESC, n DESC, 2`, jsonIDs(ids))
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var id int64
-		var a Artwork
-		if err := rows.Scan(&id, &a.ID, &a.SHA256, &a.Format, &a.Width, &a.Height, &a.Origin); err != nil {
+		var c Cover
+		var own, n int
+		if err := rows.Scan(&id, &c.ReleaseID, &c.ID, &c.SHA256, &c.Format, &c.Width, &c.Height, &c.Origin, &own, &n); err != nil {
 			return nil, err
 		}
 		if _, ok := out[id]; !ok {
-			out[id] = a
+			out[id] = c
 		}
 	}
 	return out, rows.Err()
+}
+
+// ClearArtworkTx takes an item's picture off, as one edit. It returns 0
+// when there was none.
+func ClearArtworkTx(ctx context.Context, tx *sql.Tx, userID int64, kind string, id int64) (int64, error) {
+	table, ok := artworkTables[kind]
+	if !ok {
+		return 0, ErrNotFound
+	}
+	var name string
+	var cur sql.NullInt64
+	var pinned bool
+	err := tx.QueryRowContext(ctx, `SELECT name, artwork_id, artwork_pinned FROM `+table+` WHERE id = ? AND user_id = ? AND merged_into IS NULL`, id, userID).
+		Scan(&name, &cur, &pinned)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	if err != nil || !cur.Valid {
+		return 0, err
+	}
+	return ApplyEditTx(ctx, tx, userID, EditMeta{Kind: "artwork", Summary: "Took the picture off " + name}, func(int64) []Change {
+		return []Change{{Table: table, ID: id,
+			Before: map[string]any{"artwork_id": cur.Int64, "artwork_pinned": boolInt(pinned)},
+			After:  map[string]any{"artwork_id": nil, "artwork_pinned": int64(0)}}}
+	})
 }
 
 // SetCandidateThumb remembers where a candidate's small picture is kept.

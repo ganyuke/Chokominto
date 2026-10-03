@@ -298,7 +298,7 @@ func (p *plan) mergeInto(kind string, loser, winner int64) (string, error) {
 func (p *plan) fillBlanks(table string, loser, winner int64) error {
 	cols := map[string][]string{
 		"artists":    {"mbid", "artwork_id"},
-		"songs":      {"mbid"},
+		"songs":      {"mbid", "artwork_id"},
 		"recordings": {"mbid"},
 		"releases":   {"mbid", "released", "artwork_id"},
 	}[table]
@@ -379,6 +379,19 @@ func (p *plan) moveLinks(table, col string, loser, winner int64, relink bool) er
 		p.changes = append(p.changes, func(editID int64) Change {
 			return Change{Table: table, ID: id, Before: before, After: map[string]any{col: winner, "linked_by": editID}}
 		})
+	}
+	return nil
+}
+
+// moveFixedListens moves listens linked on their own, which don't follow
+// their text, from loser to winner.
+func (p *plan) moveFixedListens(col string, loser, winner int64) error {
+	rs, err := ids(p.ctx, p.tx, fmt.Sprintf(`SELECT id FROM listens WHERE %s = ? AND fixed_by IS NOT NULL ORDER BY id`, col), loser)
+	if err != nil {
+		return err
+	}
+	for _, id := range rs {
+		p.add(Change{Table: "listens", ID: id, Before: map[string]any{col: loser}, After: map[string]any{col: winner}})
 	}
 	return nil
 }
@@ -503,6 +516,9 @@ func (p *plan) mergeRecording(loser, winner int64) error {
 	if err := p.moveLinks("sources", "recording_id", loser, winner, true); err != nil {
 		return err
 	}
+	if err := p.moveFixedListens("recording_id", loser, winner); err != nil {
+		return err
+	}
 	if err := p.rekey("release_tracks", []string{"recording_id"}, loser, winner, nil, nil); err != nil {
 		return err
 	}
@@ -555,6 +571,9 @@ func (p *plan) mergeRelease(loser, winner int64) error {
 		return err
 	}
 	if err := p.moveLinks("sources", "release_id", loser, winner, true); err != nil {
+		return err
+	}
+	if err := p.moveFixedListens("release_id", loser, winner); err != nil {
 		return err
 	}
 	if err := p.rekey("credit_overrides", []string{"scope_id"}, loser, winner, map[string]any{"scope": "release"}, nil); err != nil {

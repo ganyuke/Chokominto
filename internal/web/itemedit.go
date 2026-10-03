@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
@@ -51,8 +52,17 @@ type editData struct {
 	Buried           bool                   // songs: in the graveyard
 	AlbumArtists     []store.Ref            // albums
 	Tracks           []store.RecordingCount // albums
+	Related          []store.AlbumCount     // albums: others holding the same songs
+	SongAlbums       []songAlbum            // songs: the albums the song is on
+	MergeMoves       string                 // what a merge moves, in words
 	Usage            *store.Usage           // artists and albums, for deleting
 	InUse            string                 // what still uses it, when something does
+}
+
+// songAlbum is an album a song is on, on the song's Edit tab.
+type songAlbum struct {
+	store.AlbumCount
+	Art string
 }
 
 type recordingCredits struct {
@@ -70,24 +80,26 @@ var nouns = map[string]string{"artist": "artist", "song": "song", "release": "al
 
 // Errors after an edit, keyed so no text comes from the URL.
 var editErrors = map[string]string{
-	"name":          "Give it a name.",
-	"last-name":     "That's its only name, so it stays. Add another first.",
+	"name":          "Type a name first.",
+	"last-name":     "That's the only name, so it stays. Add another first.",
 	"loop":          "That would go round in a circle, so it wasn't saved.",
 	"no-artist":     "There's no artist by that name. Check the spelling, or scrobble something by them first.",
 	"value":         "That value isn't allowed.",
 	"gone":          "That isn't there anymore. The page has been reloaded.",
 	"stale":         "Something changed at the same time. Try again.",
 	"split":         "Check some of the recordings to split off, not all of them.",
-	"merge":         "It can't be merged into itself.",
+	"merge":         "That's the same one. Pick another to merge into.",
 	"picture-none":  "Choose a picture file first.",
 	"picture-small": "That picture is too small. Pick one at least 64 pixels on each side.",
 	"picture-big":   "That picture is too big. Pick one under 10 MB and 8,000 pixels on each side.",
 	"picture-bad":   "That file isn't a picture Chokominto can read. Try a JPEG, PNG, WebP or GIF.",
 	"picture-fetch": "That picture couldn't be downloaded. Try another one, or look again later.",
-	"in-use":        "It's still in use, so it wasn't deleted. Fix what still uses it first.",
+	"in-use":        "Something still uses this, so nothing was deleted. Fix that first.",
 	"buried":        "That song is in the graveyard. Bring it back first.",
 	"no-main":       "A recording needs at least one main artist. Credit the right one before taking this one off.",
 	"pick-tracks":   "Check some songs first.",
+	"pick-rows":     "Check some rows first.",
+	"pick-albums":   "Check the albums to merge, and pick which one to keep.",
 }
 
 func (s *Server) loadEdit(ctx context.Context, r *http.Request, u *store.User, kind string, id int64) (*editData, error) {
@@ -170,6 +182,21 @@ func (s *Server) loadEdit(ctx context.Context, r *http.Request, u *store.User, k
 		if d.Buried, err = s.db.SongBuried(ctx, id); err != nil {
 			return nil, err
 		}
+		albums, err := s.db.SongAlbums(ctx, u.ID, id)
+		if err != nil {
+			return nil, err
+		}
+		var albumIDs []int64
+		for _, a := range albums {
+			albumIDs = append(albumIDs, a.ID)
+		}
+		arts, err := s.db.ArtworkFor(ctx, "release", albumIDs)
+		if err != nil {
+			return nil, err
+		}
+		for _, a := range albums {
+			d.SongAlbums = append(d.SongAlbums, songAlbum{a, thumbOf(arts, a.ID)})
+		}
 	case "release":
 		if d.Album, err = s.db.Album(ctx, id); err != nil {
 			return nil, err
@@ -202,6 +229,9 @@ func (s *Server) loadEdit(ctx context.Context, r *http.Request, u *store.User, k
 		if d.AlbumArtists, err = s.db.ReleaseArtists(ctx, id); err != nil {
 			return nil, err
 		}
+		if d.Related, err = s.db.RelatedReleases(ctx, u.ID, id, 20); err != nil {
+			return nil, err
+		}
 	}
 	if kind == "artist" || kind == "release" {
 		u, err := s.db.ItemUsage(ctx, kind, id)
@@ -214,6 +244,11 @@ func (s *Server) loadEdit(ctx context.Context, r *http.Request, u *store.User, k
 	if d.Picture, err = s.loadPicture(ctx, u, kind, id); err != nil {
 		return nil, err
 	}
+	st, err := s.db.EntityStats(ctx, u.ID, kind, id)
+	if err != nil {
+		return nil, err
+	}
+	d.MergeMoves = mergeMoves(d, st.Listens)
 	if q := r.URL.Query().Get("merge"); q != "" {
 		d.MergeQuery = q
 		found, err := s.db.SearchItems(ctx, u.ID, kind, q, 20)
@@ -227,6 +262,26 @@ func (s *Server) loadEdit(ctx context.Context, r *http.Request, u *store.User, k
 		}
 	}
 	return d, nil
+}
+
+// mergeMoves says what merging this item into another moves there: "56
+// listens, 3 versions and 4 names".
+func mergeMoves(d *editData, n int) string {
+	count := func(n int, one, many string) string {
+		if n == 1 {
+			return "1 " + one
+		}
+		return numberPrinter.Sprintf("%d %s", n, many)
+	}
+	parts := []string{count(n, "listen", "listens")}
+	switch d.Kind {
+	case "song":
+		parts = append(parts, count(len(d.Recordings), "version", "versions"))
+	case "release":
+		parts = append(parts, count(len(d.Tracks), "song", "songs"))
+	}
+	parts = append(parts, count(len(d.Aliases), "name", "names"))
+	return strings.Join(parts[:len(parts)-1], ", ") + " and " + parts[len(parts)-1]
 }
 
 // inUse says what still uses an artist or album, or "" when nothing does.
@@ -252,10 +307,10 @@ func inUse(kind string, u store.Usage) string {
 			parts = append(parts, count(u.Albums, "album", "albums"))
 		}
 		if len(parts) > 0 {
-			sentences = append(sentences, "It's still credited on "+and(parts)+".")
+			sentences = append(sentences, "Still credited on "+and(parts)+".")
 		}
 		if u.Links > 0 {
-			sentences = append(sentences, "It's still linked to other artists, as a member, a group, \"also counts for\" or in \"who gets credit\".")
+			sentences = append(sentences, "Still linked to other artists, as a member, a group, \"also counts for\" or in \"who gets credit\".")
 		}
 	} else {
 		if u.Songs > 0 {
@@ -272,7 +327,7 @@ func inUse(kind string, u store.Usage) string {
 		}
 	}
 	if u.MergedInto {
-		sentences = append(sentences, "Something else was merged into it.")
+		sentences = append(sentences, "Something else was merged into this "+nouns[kind]+".")
 	}
 	return strings.Join(sentences, " ")
 }
@@ -343,6 +398,12 @@ func (s *Server) itemEdit(kind string) func(http.ResponseWriter, *http.Request, 
 			editID, err = s.db.SetLabel(ctx, u.ID, kind, id, formInt(r, "label"), do == "label")
 		case "picture-choose":
 			editID, err = s.choosePicture(ctx, u, kind, id, formInt(r, "candidate"))
+		case "picture-remove":
+			err = s.db.Write(ctx, func(tx *sql.Tx) error {
+				var err error
+				editID, err = store.ClearArtworkTx(ctx, tx, u.ID, kind, id)
+				return err
+			})
 		case "picture-look":
 			err = s.lookAgain(ctx, kind, id)
 		case "merge":
@@ -350,6 +411,9 @@ func (s *Server) itemEdit(kind string) func(http.ResponseWriter, *http.Request, 
 			if err == nil {
 				path = fmt.Sprintf("%s/%d", pagePaths[kind], formInt(r, "into"))
 			}
+		case "merge-here":
+			// The other one comes here, and this page stays.
+			editID, err = s.db.Merge(ctx, u.ID, kind, formInt(r, "from"), id)
 		case "delete":
 			// The page is gone after, so Changes shows what happened.
 			editID, err = s.db.DeleteItem(ctx, u.ID, kind, id)
@@ -466,6 +530,12 @@ func (s *Server) kindEdit(ctx context.Context, r *http.Request, u *store.User, k
 			return 0, errPickTracks
 		}
 		return s.db.TakeOffAlbum(ctx, u.ID, id, recs)
+	case kind == "song" && do == "merge-albums":
+		albums, into := formIDs(r, "album"), formInt(r, "into")
+		if len(albums) == 0 || into == 0 || (len(albums) == 1 && albums[0] == into) {
+			return 0, errPickAlbums
+		}
+		return s.db.MergeMany(ctx, u.ID, "release", albums, into)
 	case kind == "song" && do == "bury":
 		return s.db.BurySong(ctx, u.ID, id)
 	case kind == "song" && do == "unbury":
@@ -537,11 +607,16 @@ func editErrorCode(err error) string {
 		return "no-main"
 	case errors.Is(err, errPickTracks):
 		return "pick-tracks"
+	case errors.Is(err, errPickRows):
+		return "pick-rows"
+	case errors.Is(err, errPickAlbums):
+		return "pick-albums"
 	}
 	return ""
 }
 
 var errPickTracks = errors.New("check some songs first")
+var errPickAlbums = errors.New("tick the albums to merge")
 
 // creditChoice finds an artist to credit by name, or a new one to add
 // when there's no artist by that name.
@@ -556,7 +631,11 @@ func (s *Server) creditChoice(ctx context.Context, u *store.User, name string) (
 // viewTabs are the Read and Edit tabs of an item page.
 func viewTabs(kind string, id int64, current string) []periodTab {
 	path := fmt.Sprintf("%s/%d", pagePaths[kind], id)
-	return []periodTab{{"Read", path, current == "read"}, {"Edit", path + "/edit", current == "edit"}}
+	tabs := []periodTab{{"Read", path, current == "read"}, {"Edit", path + "/edit", current == "edit"}}
+	if kind != "artist" {
+		tabs = append(tabs, periodTab{"Scrobbles", path + "/scrobbles", current == "scrobbles"})
+	}
+	return tabs
 }
 
 // editPage is an item's Edit view.

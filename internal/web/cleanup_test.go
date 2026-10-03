@@ -67,7 +67,7 @@ func TestEditNamesCreditsAndGraveyard(t *testing.T) {
 		t.Fatalf("song page names:\n%s", body)
 	}
 	_, body, _ = e.get(songPath + "/edit")
-	for _, want := range []string{"On its page", "In lists", "Every name, shown or not, is used to link new scrobbles", "Fukashigi No Carte.mp3"} {
+	for _, want := range []string{"On the page", "In lists", "Every name, shown or not, is used to link new scrobbles", "Fukashigi No Carte.mp3"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("edit tab has no %q", want)
 		}

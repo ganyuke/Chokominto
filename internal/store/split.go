@@ -40,7 +40,7 @@ func (p *plan) newSong(name, lang string, langSet int64) (int64, error) {
 	}
 	p.add(Change{Op: OpInsert, Table: "songs", After: map[string]any{
 		"id": id, "user_id": p.userID, "name": name, "other_names": "", "pinned_alias": nil, "mbid": nil, "merged_into": nil, "created_at": unix(),
-		"second_alias": nil, "second_set": int64(0), "byline": "", "buried_by": nil}})
+		"second_alias": nil, "second_set": int64(0), "byline": "", "buried_by": nil, "artwork_id": nil, "artwork_pinned": int64(0)}})
 	p.add(Change{Op: OpInsert, Table: "song_aliases", After: map[string]any{
 		"id": aliasID, "song_id": id, "name": name, "lang": lang, "lang_set": langSet, "shown": int64(1)}})
 	return id, nil

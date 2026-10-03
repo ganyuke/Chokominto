@@ -43,6 +43,8 @@ type historyPage struct {
 	Newer   string
 	Older   string
 	Live    bool // the newest page, which updates itself
+	// Text is set when only listens sent with one received text are shown.
+	Text *store.SourceInfo
 }
 
 func parseCursor(v string) (store.Cursor, bool) {
@@ -85,6 +87,18 @@ func (s *Server) historyDays(ctx context.Context, q url.Values, viewer *store.Us
 		rng.Oldest = true
 	}
 	p.Live = rng.Before == nil && rng.After == nil
+	// The owner can look at the listens sent with one received text, from
+	// a Fix page.
+	keep := ""
+	if id, err := strconv.ParseInt(q.Get("text"), 10, 64); err == nil && id > 0 && viewer != nil {
+		src, err := s.db.SourceInfo(ctx, owner.ID, id)
+		if err == nil {
+			rng.SourceID, p.Text, p.Live = id, &src, false
+			keep = fmt.Sprintf("text=%d&", id)
+		} else if !errors.Is(err, store.ErrNotFound) {
+			return err
+		}
+	}
 	ls, err := s.db.Listens(ctx, owner.ID, rng)
 	if err != nil {
 		return err
@@ -104,19 +118,19 @@ func (s *Server) historyDays(ctx context.Context, q url.Values, viewer *store.Us
 	}
 	if len(ls) > 0 {
 		first, last := ls[0], ls[len(ls)-1]
-		newer, err := s.db.Listens(ctx, owner.ID, store.ListenRange{After: &store.Cursor{TS: first.ListenedAt, ID: first.ID}, Limit: 1})
+		newer, err := s.db.Listens(ctx, owner.ID, store.ListenRange{After: &store.Cursor{TS: first.ListenedAt, ID: first.ID}, Limit: 1, SourceID: rng.SourceID})
 		if err != nil {
 			return err
 		}
 		if len(newer) > 0 {
-			p.Newer = "/history?after=" + cursorParam(first)
+			p.Newer = "/history?" + keep + "after=" + cursorParam(first)
 		}
-		older, err := s.db.Listens(ctx, owner.ID, store.ListenRange{Before: &store.Cursor{TS: last.ListenedAt, ID: last.ID}, Limit: 1})
+		older, err := s.db.Listens(ctx, owner.ID, store.ListenRange{Before: &store.Cursor{TS: last.ListenedAt, ID: last.ID}, Limit: 1, SourceID: rng.SourceID})
 		if err != nil {
 			return err
 		}
 		if len(older) > 0 {
-			p.Older = "/history?before=" + cursorParam(last)
+			p.Older = "/history?" + keep + "before=" + cursorParam(last)
 		}
 	}
 	return nil
@@ -235,9 +249,11 @@ type settingsPage struct {
 	Zones     []string
 	Labels    []store.LabelUse
 	Readings  []readingGroup
-	OwnRules  []resolve.OwnRule
-	Unused    int    // pictures nothing shows anymore
-	UnusedMB  string // the space they take
+	OwnRules  []ruleRow
+	// FixedLinks is how many received texts have a link set by hand.
+	FixedLinks int
+	Unused     int    // pictures nothing shows anymore
+	UnusedMB   string // the space they take
 }
 
 type readingGroup struct {
@@ -253,6 +269,7 @@ var notices = map[string]string{
 	"display-name":     "Name saved.",
 	"password":         "Password changed. You've been logged out everywhere else.",
 	"undone":           "Undone.",
+	"reread-none":      "None of those could be read automatically, so nothing changed.",
 	"already":          "That change was already undone.",
 	"task-undone":      "Undone, all of it.",
 	"scrobbled":        "Scrobbled.",
@@ -289,6 +306,12 @@ func (s *Server) baseURL(r *http.Request) string {
 	return scheme + "://" + r.Host
 }
 
+// ruleRow is one of the owner's rules, with the song a link rule links to.
+type ruleRow struct {
+	resolve.OwnRule
+	Song *name
+}
+
 func (s *Server) settingsData(r *http.Request, u *store.User) (settingsPage, error) {
 	p := settingsPage{
 		Page:      Page{Title: "Settings", Nav: "settings", User: u, Notice: notices[r.URL.Query().Get("notice")], Undo: undoParam(r)},
@@ -318,7 +341,28 @@ func (s *Server) settingsData(r *http.Request, u *store.User) (settingsPage, err
 		g := &p.Readings[len(p.Readings)-1]
 		g.Readings = append(g.Readings, st)
 	}
-	p.OwnRules = own
+	var ruleRecs []int64
+	for _, o := range own {
+		if o.RecordingID != 0 {
+			ruleRecs = append(ruleRecs, o.RecordingID)
+		}
+	}
+	infos, err := s.db.RecordingInfos(r.Context(), ruleRecs)
+	if err != nil {
+		return p, err
+	}
+	for _, o := range own {
+		row := ruleRow{OwnRule: o}
+		if info, ok := infos[o.RecordingID]; ok {
+			n := songName(info.Song)
+			n.Version = info.Version
+			row.Song = &n
+		}
+		p.OwnRules = append(p.OwnRules, row)
+	}
+	if _, p.FixedLinks, err = s.db.FixedSources(r.Context(), u.ID, "", 0, 0); err != nil {
+		return p, err
+	}
 	unused, err := s.db.UnusedArtwork(r.Context())
 	if err != nil {
 		return p, err

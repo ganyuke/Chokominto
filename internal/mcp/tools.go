@@ -151,6 +151,7 @@ type sentText struct {
 	Album        string     `json:"album,omitempty"`
 	Listens      int        `json:"listens"`
 	LinkedTo     *recording `json:"linked_to"`
+	OnAlbum      *item      `json:"on_album,omitempty"`
 	LinkedByHand bool       `json:"linked_by_hand,omitempty"`
 }
 
@@ -219,7 +220,7 @@ var tools = []tool{
 	},
 	{
 		name:        "search_sent_text",
-		description: "Find the text music players sent, by part of its artist, title or album. Shows how many listens each text has and which recording it's linked to. Use this to see every spelling of a song.",
+		description: "Find the text music players sent, by part of its artist, title or album. Shows how many listens each text has, which recording it's linked to and which album its listens are on. Use this to see every spelling of a song.",
 		readOnly:    true,
 		params: []param{
 			{"query", "string", "Part of the artist, title or album as sent.", true, nil},
@@ -247,12 +248,25 @@ var tools = []tool{
 			if err != nil {
 				return nil, err
 			}
+			var albumIDs []int64
+			for _, src := range srcs {
+				if src.ReleaseID.Valid {
+					albumIDs = append(albumIDs, src.ReleaseID.Int64)
+				}
+			}
+			albums, err := s.DB.ReleaseRefs(ctx, albumIDs)
+			if err != nil {
+				return nil, err
+			}
 			out := []sentText{}
 			for _, src := range srcs {
 				t := sentText{SourceID: src.ID, Artist: src.Artist, Title: src.Title, Album: src.Album, Listens: src.Listens, LinkedByHand: src.LinkedByOwner}
 				if info, ok := infos[src.RecordingID.Int64]; ok && src.RecordingID.Valid {
 					r := recordingOf(info)
 					t.LinkedTo = &r
+				}
+				if al, ok := albums[src.ReleaseID.Int64]; ok && src.ReleaseID.Valid {
+					t.OnAlbum = &item{al.ID, al.Name, al.OtherNames}
 				}
 				out = append(out, t)
 			}
@@ -599,7 +613,7 @@ var tools = []tool{
 	},
 	{
 		name:        "link_sent_text",
-		description: "Link sent text to a recording, as the owner would on the Fix page. Every listen with that text moves. Text linked this way counts as linked by hand, so automatic re-reading never moves it back. One edit, undoable.",
+		description: "Link sent text to a recording, as the owner would on the Fix page. Every listen with that text moves, and later listens sent with the same text go there too. The listens stay on the album they're on. Text linked this way counts as linked by hand, so automatic re-reading never moves it back. One edit, undoable.",
 		params: []param{
 			{"source_ids", "array of integer", "The sent texts, from search_sent_text or review.", true, nil},
 			{"recording_id", "integer", "Where they go.", true, nil},
@@ -616,6 +630,31 @@ var tools = []tool{
 				return nil, errors.New("give at least one source_id")
 			}
 			res, err := s.DB.LinkSources(ctx, s.UserID, a.SourceIDs, a.RecordingID)
+			if err != nil {
+				return nil, err
+			}
+			return s.changed(ctx, res.EditID, fmt.Sprintf("%d listens moved.", res.Listens))
+		},
+	},
+	{
+		name:        "set_sent_text_album",
+		description: "Put the listens of sent text on another album, or on no album, without changing the song. For listens that ended up on the wrong album. Every listen with that text moves, and the text counts as linked by hand. One edit, undoable.",
+		params: []param{
+			{"source_ids", "array of integer", "The sent texts, from search_sent_text. They must be linked to a recording already.", true, nil},
+			{"album_id", "integer", "The album they go on, or 0 for no album.", true, nil},
+		},
+		run: func(ctx context.Context, s *Server, raw json.RawMessage) (any, error) {
+			var a struct {
+				SourceIDs []int64 `json:"source_ids"`
+				AlbumID   *int64  `json:"album_id"`
+			}
+			if err := decode(raw, &a); err != nil {
+				return nil, err
+			}
+			if len(a.SourceIDs) == 0 || a.AlbumID == nil {
+				return nil, errors.New("give at least one source_id, and album_id (0 for no album)")
+			}
+			res, err := s.DB.SetSourcesRelease(ctx, s.UserID, a.SourceIDs, *a.AlbumID)
 			if err != nil {
 				return nil, err
 			}
@@ -694,10 +733,10 @@ var tools = []tool{
 	},
 	{
 		name:        "add_name",
-		description: "Give a song, artist or album another name, like its romaji or English title. Doesn't change which name is shown first. One edit, undoable.",
+		description: "Give a song, artist or album another name, like the romaji or English title. Doesn't change which name is shown first. One edit, undoable.",
 		params: []param{
 			{"kind", "string", "What gets the name.", true, []string{"song", "artist", "album"}},
-			{"id", "integer", "Its id.", true, nil},
+			{"id", "integer", "The id of that song, artist or album.", true, nil},
 			{"name", "string", "The other name.", true, nil},
 		},
 		run: func(ctx context.Context, s *Server, raw json.RawMessage) (any, error) {
@@ -724,13 +763,13 @@ var tools = []tool{
 		name: "set_name",
 		description: `Change how one of a song's, artist's or album's names is shown. Every name, shown or not, still links new scrobbles and finds likely duplicates, so hiding a name is safe. Names that came over in a merge start hidden, since they're mostly spellings players sent, like YouTube titles or file names.
 - kind: whether it's English, romaji or in the original script. Names are shown in that order, so this decides which one is shown first unless use_as_name is set.
-- on_page: listed under the title on its own page. Show real names (the official title, its romaji, an English title), not spellings players sent.
+- on_page: listed under the title on the item's own page. Show real names (the official title, its romaji, an English title), not spellings players sent.
 - in_lists: true makes it the one name shown under the item's name in tables and rankings. False on the name that's there now leaves none.
 - use_as_name: true shows the item by this name.
 Leave out what shouldn't change. One edit, undoable.`,
 		params: []param{
 			{"kind", "string", "What the name belongs to.", true, []string{"song", "artist", "album"}},
-			{"id", "integer", "Its id.", true, nil},
+			{"id", "integer", "The id of that song, artist or album.", true, nil},
 			{"name_id", "integer", "The name, from show_song, show_artist or show_album.", true, nil},
 			{"name_kind", "string", "What kind of name it is.", false, []string{"english", "romaji", "original"}},
 			{"on_page", "boolean", "List it on the item's page.", false, nil},
@@ -765,7 +804,7 @@ Leave out what shouldn't change. One edit, undoable.`,
 				}
 			}
 			if cur == nil {
-				return nil, fmt.Errorf("name %d isn't one of its names, see show_%s", a.NameID, a.Kind)
+				return nil, fmt.Errorf("name %d isn't one of the names there, see show_%s", a.NameID, a.Kind)
 			}
 			choice := store.NameChoice{AliasID: cur.ID, Shown: cur.Shown}
 			if a.NameKind != "" {
@@ -808,7 +847,7 @@ Leave out what shouldn't change. One edit, undoable.`,
 		description: "Take a name away from a song, artist or album. It then no longer links new scrobbles sent with that name, or finds duplicates by it. Listens already linked stay. To just stop showing a name, use set_name with on_page false instead. The only name can't be removed. One edit, undoable.",
 		params: []param{
 			{"kind", "string", "What the name belongs to.", true, []string{"song", "artist", "album"}},
-			{"id", "integer", "Its id.", true, nil},
+			{"id", "integer", "The id of that song, artist or album.", true, nil},
 			{"name_id", "integer", "The name, from show_song, show_artist or show_album.", true, nil},
 		},
 		run: func(ctx context.Context, s *Server, raw json.RawMessage) (any, error) {
@@ -836,7 +875,7 @@ Leave out what shouldn't change. One edit, undoable.`,
 		description: "Change the name shown for a song, artist or album. The old name stays as another name. One edit, undoable.",
 		params: []param{
 			{"kind", "string", "What to rename.", true, []string{"song", "artist", "album"}},
-			{"id", "integer", "Its id.", true, nil},
+			{"id", "integer", "The id of that song, artist or album.", true, nil},
 			{"name", "string", "The new name.", true, nil},
 		},
 		run: func(ctx context.Context, s *Server, raw json.RawMessage) (any, error) {
@@ -861,7 +900,7 @@ Leave out what shouldn't change. One edit, undoable.`,
 	},
 	{
 		name:        "set_counts_for",
-		description: `Make an artist's listens also count for another artist, or stop it. For a character and their voice actor (note "voice"), a persona and the person, or a project and its artist. One edit, undoable.`,
+		description: `Make an artist's listens also count for another artist, or stop it. For a character and their voice actor (note "voice"), a persona and the person, or a project and the artist behind it. One edit, undoable.`,
 		params: []param{
 			{"artist_id", "integer", "The character, persona or project.", true, nil},
 			{"counts_for_id", "integer", "Who the listens also count for.", true, nil},
@@ -1028,7 +1067,7 @@ Someone with no artist yet (a character nobody scrobbled) goes in new_artists an
 		destructive: true,
 		params: []param{
 			{"kind", "string", "What to delete.", true, []string{"artist", "album"}},
-			{"id", "integer", "Its id.", true, nil},
+			{"id", "integer", "The id of that artist or album.", true, nil},
 		},
 		run: func(ctx context.Context, s *Server, raw json.RawMessage) (any, error) {
 			var a struct {
@@ -1048,7 +1087,7 @@ Someone with no artist yet (a character nobody scrobbled) goes in new_artists an
 				if uerr != nil {
 					return nil, uerr
 				}
-				return nil, fmt.Errorf("it's still in use: %d songs, %d albums, %d listens, %d links to other artists, %d remembered links, merged into by others: %v",
+				return nil, fmt.Errorf("still in use: %d songs, %d albums, %d listens, %d links to other artists, %d remembered links, merged into by others: %v",
 					u.Songs, u.Albums, u.Listens, u.Links, u.Rules, u.MergedInto)
 			}
 			if err != nil {

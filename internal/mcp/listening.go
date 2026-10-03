@@ -247,7 +247,7 @@ var listeningTools = []tool{
 		readOnly:    true,
 		params: append([]param{
 			{"kind", "string", "What to count.", false, []string{"song", "artist", "album"}},
-			{"id", "integer", "Its id, from search or another tool.", false, nil},
+			{"id", "integer", "The id of that song, artist or album, from search or another tool.", false, nil},
 		}, periodParams...),
 		run: func(ctx context.Context, s *Server, raw json.RawMessage) (any, error) {
 			var a struct {

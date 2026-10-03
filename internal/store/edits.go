@@ -17,11 +17,11 @@ import (
 // row. Only whitelisted tables and columns can be changed, because table and
 // column names end up in SQL.
 var editable = map[string]map[string]bool{
-	"listens":           {"deleted_by": true},
+	"listens":           {"deleted_by": true, "recording_id": true, "release_id": true, "fixed_by": true},
 	"sources":           {"recording_id": true, "release_id": true, "linked_by": true},
 	"labels":            {"name": true, "hide_default": true, "position": true},
 	"artists":           {"kind": true, "pinned_alias": true, "second_alias": true, "second_set": true, "mbid": true, "merged_into": true, "artwork_id": true, "artwork_pinned": true},
-	"songs":             {"pinned_alias": true, "second_alias": true, "second_set": true, "mbid": true, "merged_into": true, "buried_by": true},
+	"songs":             {"pinned_alias": true, "second_alias": true, "second_set": true, "mbid": true, "merged_into": true, "buried_by": true, "artwork_id": true, "artwork_pinned": true},
 	"recordings":        {"song_id": true, "version": true, "is_original": true, "rank_alone": true, "mbid": true, "merged_into": true},
 	"releases":          {"pinned_alias": true, "second_alias": true, "second_set": true, "kind": true, "context": true, "released": true, "mbid": true, "merged_into": true, "artwork_id": true, "artwork_pinned": true},
 	"artist_aliases":    aliasColumns("artist_id"),
@@ -62,7 +62,7 @@ var wholeRows = map[string]rowShape{
 	// aliases. Artists are added when credited by hand, and artists and
 	// albums nothing uses can be deleted.
 	"songs": {key: []string{"id"}, cols: []string{"id", "user_id", "name", "other_names", "pinned_alias", "mbid", "merged_into", "created_at",
-		"second_alias", "second_set", "byline", "buried_by"}},
+		"second_alias", "second_set", "byline", "buried_by", "artwork_id", "artwork_pinned"}},
 	"artists": {key: []string{"id"}, cols: []string{"id", "user_id", "kind", "name", "other_names", "pinned_alias", "mbid", "merged_into", "created_at",
 		"artwork_id", "artwork_pinned", "second_alias", "second_set", "byline"}},
 	"releases": {key: []string{"id"}, cols: []string{"id", "user_id", "name", "other_names", "pinned_alias", "kind", "context", "released", "mbid",

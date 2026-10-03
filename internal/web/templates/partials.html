@@ -143,3 +143,73 @@
 {{end}}
 {{if and .Online (not .Chosen) (not .Looking)}}<form method="post" action="{{$path}}/edit"><input type="hidden" name="do" value="picture-look"><button type="submit">Look again</button></form>{{end}}
 {{end}}
+
+{{/* Received text rows with checkboxes, in the form "move". ShowSong adds
+     what each text is linked to. */}}
+{{define "sent-table"}}
+<div class="table-scroll">
+<table class="table sent">
+<thead><tr><th scope="col" class="check"><span class="visually-hidden">Pick</span></th><th scope="col">Artist received</th><th scope="col">Title received</th><th scope="col">Album received</th><th scope="col" class="num">Listens</th>{{if .ShowSong}}<th scope="col">Song</th>{{end}}<th scope="col">Album</th><th scope="col">Linked by</th><th scope="col" class="action"><span class="muted">Action</span></th></tr></thead>
+<tbody>
+{{$showSong := .ShowSong}}
+{{range .Rows}}<tr>
+<td class="check"><input type="checkbox" form="move" name="s" value="{{.ID}}"{{if .Checked}} checked{{end}} aria-label="Pick {{.Title}} by {{.Artist}}"></td>
+<td>{{dash .Artist}}</td><td>{{dash .Title}}</td><td>{{dash .Album}}</td>
+<td class="num">{{num .Listens}}</td>
+{{if $showSong}}<td>{{template "name" (withVersion .Song .Version)}}</td>{{end}}
+<td>{{with .OnAlbum}}{{template "name" .}}{{else}}—{{end}}</td>
+<td>{{if .By.Href}}<a href="{{.By.Href}}">{{.By.Text}}</a>{{else}}{{.By.Text}}{{end}}</td>
+<td class="action fix">{{with .Fix}}<a href="{{.}}">Fix</a>{{end}}</td>
+</tr>
+{{end}}{{range .Alone}}<tr>
+<td class="check"></td>
+<td>{{dash .Artist}}</td><td>{{dash .Title}}</td><td class="muted">{{.When}}</td>
+<td class="num">1</td>
+{{if $showSong}}<td>—</td>{{end}}
+<td>{{with .OnAlbum}}{{template "name" .}}{{else}}—{{end}}</td>
+<td>Fixed alone</td>
+<td class="action fix">{{with .Fix}}<a href="{{.}}">Fix</a>{{end}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+{{end}}
+
+{{/* Where checked rows can go: another version, another song, an album.
+     Searching keeps the ticks, since Search sends the same form. */}}
+{{define "destination"}}
+<form id="move" method="post" action="{{.Path}}"></form>
+<h2 id="destination">Destination</h2>
+<p class="help">Check rows above, then pick where their listens go. Every listen sent with a checked text moves, and so do later ones sent with the same text.</p>
+{{if .Versions}}<h3 id="to-version">Version</h3>
+<p class="inline-form"><label class="visually-hidden" for="version">Version</label>
+<select id="version" name="version" form="move">{{range .Versions}}<option value="{{.Value}}">{{.Label}}</option>{{end}}</select>
+<button type="submit" form="move" name="do" value="version">Move checked to this version</button></p>
+{{end}}
+<h3 id="to-song">Song</h3>
+<div class="search-row"><label class="visually-hidden" for="q">Song, artist or album, in any script</label><input type="text" id="q" name="q" form="move" value="{{.Query}}" placeholder="Song, artist or album, in any script"><button type="submit" form="move" formmethod="get" formaction="{{.Path}}#to-song">Search</button></div>
+{{if .Results}}
+<div class="table-scroll">
+<table class="table">
+<thead><tr><th scope="col" class="wide">Song</th><th scope="col" class="wide">Version</th><th scope="col" class="wide">Artist</th><th scope="col" class="num">Listens</th><th scope="col" class="action"><span class="muted">Action</span></th></tr></thead>
+<tbody>
+{{range .Results}}<tr><td>{{template "name" .Song}}</td><td>{{if .Version}}{{.Version}}{{else}}<span class="muted">Main version</span>{{end}}</td><td>{{template "names" .Artists}}</td><td class="num">{{num .Listens}}</td><td class="action"><button type="submit" form="move" name="do" value="song:{{.RecordingID}}">Move checked here</button></td></tr>
+{{end}}</tbody>
+</table>
+</div>
+{{else if .Query}}<p>Nothing matches “{{.Query}}”.</p>{{end}}
+<h3 id="to-album">Album</h3>
+<p class="help">The song stays the same. Only the album the checked listens count for changes.</p>
+<div class="search-row"><label class="visually-hidden" for="album">Album name</label><input type="text" id="album" name="album" form="move" value="{{.AlbumQuery}}" placeholder="Album name, in any script"><button type="submit" form="move" formmethod="get" formaction="{{.Path}}#to-album">Search</button></div>
+{{if .Albums}}
+<div class="table-scroll">
+<table class="table">
+<thead><tr><th scope="col" class="fill">Album</th><th scope="col" class="action"><span class="muted">Action</span></th></tr></thead>
+<tbody>
+{{range .Albums}}<tr><td class="fill">{{template "name" .Album}}{{with .Context}} <span class="muted">({{.}})</span>{{end}}</td><td class="action"><button type="submit" form="move" name="do" value="album:{{.ID}}">Put checked on this album</button></td></tr>
+{{end}}</tbody>
+</table>
+</div>
+{{else if .AlbumQuery}}<p>No album matches “{{.AlbumQuery}}”.</p>{{end}}
+<p><button type="submit" form="move" name="do" value="no-album">Take checked off their album</button></p>
+{{end}}

@@ -113,10 +113,11 @@ func afterChange(ctx context.Context, tx *sql.Tx, w *derivedWork, c Change, key 
 		id := key["id"]
 		// Only listens whose link changes. Rewriting the rest to the same
 		// values still runs the count triggers for every listen, which on a
-		// reparse is nearly all of them.
+		// reparse is nearly all of them. A listen linked on its own keeps
+		// its link.
 		_, err := tx.ExecContext(ctx,
 			`UPDATE listens SET (recording_id, release_id) = (SELECT recording_id, release_id FROM sources WHERE id = ?1)
-			 WHERE source_id = ?1 AND (recording_id, release_id) IS NOT (SELECT recording_id, release_id FROM sources WHERE id = ?1)`,
+			 WHERE source_id = ?1 AND fixed_by IS NULL AND (recording_id, release_id) IS NOT (SELECT recording_id, release_id FROM sources WHERE id = ?1)`,
 			id)
 		return err
 

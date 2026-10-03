@@ -184,6 +184,9 @@ a:hover, a:focus-visible { text-decoration: underline; }
 .table .fix { font-size: var(--text-small); }
 /* Key/value tables, like the received text on the Fix page. */
 .table.kv { width: auto; max-width: 100%; margin: 0 0 var(--s4); }
+/* Received text: many columns, sized by what's in them. */
+.table.sent td { overflow-wrap: anywhere; min-width: 5rem; }
+.table.sent td.check, .table.sent td.num, .table.sent td.action { min-width: 0; overflow-wrap: normal; }
 .table.kv th { white-space: nowrap; }
 .table tr.unlinked td:not(.time) { color: var(--text-muted); font-style: italic; }
 
@@ -241,6 +244,11 @@ fieldset.field legend { padding: 0; margin-bottom: var(--s1); font-weight: 700; 
 fieldset.field label { font-weight: 400; }
 .field .help, p.help { font-size: var(--text-small); color: var(--text-muted); margin: var(--s1) 0 0; }
 form.actions { margin: var(--s3) 0 var(--s4); }
+p.help + .search-row, p.help + .inline-form, p.help + form, p.help + .table-scroll { margin-top: var(--s2); }
+.scope li { margin: 0 0 var(--s2); }
+.scope a[aria-current="true"] { font-weight: 700; color: var(--text); }
+.scope .help { display: block; font-size: var(--text-small); color: var(--text-muted); }
+h4 { font-size: var(--text-base); font-weight: 700; margin: var(--s3) 0 var(--s1); }
 input[type="text"], input[type="password"], input[type="datetime-local"], select {
   font: inherit;
   width: 100%;

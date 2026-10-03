@@ -289,6 +289,14 @@ func (db *DB) TakeOffAlbum(ctx context.Context, userID, releaseID int64, recordi
 					return Change{Table: "sources", ID: id, Before: before, After: map[string]any{"release_id": nil, "linked_by": editID}}
 				})
 			}
+			// Listens linked there on their own leave the album too.
+			fixed, err := ids(p.ctx, p.tx, `SELECT id FROM listens WHERE release_id = ? AND recording_id = ? AND fixed_by IS NOT NULL ORDER BY id`, releaseID, rec)
+			if err != nil {
+				return "", err
+			}
+			for _, id := range fixed {
+				p.add(Change{Table: "listens", ID: id, Before: map[string]any{"release_id": releaseID}, After: map[string]any{"release_id": nil}})
+			}
 			var song string
 			p.tx.QueryRowContext(p.ctx, `SELECT s.name FROM recordings r JOIN songs s ON s.id = r.song_id WHERE r.id = ?`, rec).Scan(&song)
 			names = append(names, recordingTitle(p, rec, song))

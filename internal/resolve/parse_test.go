@@ -227,6 +227,11 @@ func TestReadTitle(t *testing.T) {
 		{"不可思議のカルテ - Fukashigi no KARTE -Instrumental-", "不可思議のカルテ", "Fukashigi no KARTE", "Instrumental"},
 		{"不可思議のカルテ -Instrumental- - Fukashigi no KARTE -Instrumental-", "不可思議のカルテ", "Fukashigi no KARTE", "Instrumental"},
 		{"サインはB -有馬かな Solo Ver.-", "サインはB", "", "有馬かな Solo Ver."},
+		// TV size with no brackets, and in angle brackets.
+		{"五等分のカタチ TV Size", "五等分のカタチ", "", "TV Size"},
+		{"The Cruel Angel's Thesis <TV. Size Version>", "The Cruel Angel's Thesis", "", "TV. Size Version"},
+		{"恋愛ミリフィルム -TV size.- - Renai millimeter film TV size", "恋愛ミリフィルム", "Renai millimeter film", "TV size."},
+		{"TV Size", "TV Size", "", ""},
 		// Not versions or other names.
 		{"Love Trip (2019)", "Love Trip (2019)", "", ""},
 		{"A Storm, A Spire, and A Sanctum (Dvalin's Nest)", "A Storm, A Spire, and A Sanctum (Dvalin's Nest)", "", ""},
