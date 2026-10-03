@@ -74,7 +74,7 @@ func TestOwnRules(t *testing.T) {
 		t.Fatal(err)
 	}
 	offers, _ := Offers(ctx, e.db, e.user, en, idol)
-	if _, err := SaveOffer(ctx, e.db, e.user, offers[0], "x"); err != nil {
+	if _, err := SaveOffer(ctx, e.db, e.user, offers[0], "x", false); err != nil {
 		t.Fatal(err)
 	}
 	_, own, err := ReadingSettings(ctx, e.db, e.user)

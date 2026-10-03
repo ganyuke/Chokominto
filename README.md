@@ -113,7 +113,7 @@ Running the import again is safe. Listens already in Chokominto are skipped, so 
 
 ## Fixing names and links
 
-Every listen has a Fix link when you're logged in. The Fix page shows exactly what your scrobbler sent and how many times it sent that same text. Under Scope you choose what a change applies to: every listen sent with that text, which also covers later ones, or only the one listen you opened. From there you can:
+Every listen has a Fix link when you're logged in. The Fix page shows exactly what your scrobbler sent and how many times it sent that same text. Under Scope you make two separate choices before changing anything. The first is which listens sent so far the change moves: only the one you opened, or every listen sent with that text. The second is what later listens do: nothing changes for them, the same text is remembered, or a rule is saved that also covers other albums or spellings. From there you can:
 
 - pick another version of the same song, from a list of all its versions
 - search for another song

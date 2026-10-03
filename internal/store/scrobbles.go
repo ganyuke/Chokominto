@@ -413,7 +413,7 @@ func (db *DB) UnfixListen(ctx context.Context, userID, listenID int64) (int64, e
 		if err != nil || !fixed.Valid {
 			return err
 		}
-		editID, err = ApplyEditTx(ctx, tx, userID, EditMeta{Kind: "link", Summary: "Put 1 listen back with the others sent with the same text"},
+		editID, err = ApplyEditTx(ctx, tx, userID, EditMeta{Kind: "link", Summary: "Linked 1 listen like the others sent with the same text again"},
 			func(int64) []Change {
 				return []Change{{Table: "listens", ID: listenID,
 					Before: map[string]any{"recording_id": nullable(rec), "release_id": nullable(rel), "fixed_by": fixed.Int64},
@@ -498,48 +498,196 @@ func LinkSourcesToTx(ctx context.Context, tx *sql.Tx, userID int64, links []Sour
 	return res, err
 }
 
-// LinkTextOfListen does for every listen sent with the same text what was
-// done for one listen linked on its own: the text is linked by hand to that
-// listen's recording, and the listen follows its text again, as one edit.
-// It returns the recording.
-func (db *DB) LinkTextOfListen(ctx context.Context, userID, listenID int64) (int64, LinkResult, error) {
+// LinkScope says what a fix made from one listen applies to. The two parts
+// are independent: which of the listens sent so far move, and whether later
+// listens sent with the same text follow.
+type LinkScope struct {
+	All   bool // every listen sent with the text so far, not only the one
+	Later bool // later listens sent with the same text too
+}
+
+// LinkTarget is where a fix sends listens.
+type LinkTarget struct {
+	RecordingID int64
+	Album       AlbumChoice
+}
+
+// LinkScoped moves listens to a recording and album by hand, as one edit,
+// starting from one listen. See linkScoped for what each scope does.
+func (db *DB) LinkScoped(ctx context.Context, userID, listenID int64, t LinkTarget, sc LinkScope) (LinkResult, error) {
 	var res LinkResult
-	var recording int64
 	err := db.Write(ctx, func(tx *sql.Tx) error {
-		var rec, rel, fixed sql.NullInt64
-		var sourceID int64
-		err := tx.QueryRowContext(ctx, `SELECT recording_id, release_id, fixed_by, source_id FROM listens WHERE id = ? AND user_id = ? AND deleted_by IS NULL`,
-			listenID, userID).Scan(&rec, &rel, &fixed, &sourceID)
-		if errors.Is(err, sql.ErrNoRows) || (err == nil && (!fixed.Valid || !rec.Valid)) {
-			return ErrNotFound
-		}
-		if err != nil {
-			return err
-		}
-		recording = rec.Int64
-		if err := liveRecording(ctx, tx, userID, recording); err != nil {
-			return err
-		}
-		s, err := SourceTx(ctx, tx, sourceID)
-		if err != nil {
-			return err
-		}
-		if res.Name, err = entityName(ctx, tx, "recording", recording); err != nil {
-			return err
-		}
-		p := &plan{ctx: ctx, tx: tx, userID: userID}
-		release, err := p.releaseFor(s, recording, map[[2]int64]bool{})
-		if err != nil {
-			return err
-		}
-		tx.QueryRowContext(ctx, `SELECT count(*) FROM listens WHERE source_id = ? AND deleted_by IS NULL AND fixed_by IS NULL`, sourceID).Scan(&res.Listens)
-		res.From = fromName(ctx, tx, map[int64]bool{s.RecordingID.Int64: true}, recording)
-		p.linkSource(s, recording, release)
-		p.add(Change{Table: "listens", ID: listenID,
-			Before: map[string]any{"recording_id": recording, "release_id": nullable(rel), "fixed_by": fixed.Int64},
-			After:  map[string]any{"recording_id": recording, "release_id": release, "fixed_by": nil}})
-		res.EditID, err = p.apply(EditMeta{Kind: "link", Summary: moveSummary(res.Listens, res.From, res.Name)})
+		var err error
+		res, err = LinkScopedTx(ctx, tx, userID, listenID, t, sc)
 		return err
 	})
-	return recording, res, err
+	return res, err
+}
+
+func LinkScopedTx(ctx context.Context, tx *sql.Tx, userID, listenID int64, t LinkTarget, sc LinkScope) (LinkResult, error) {
+	if err := liveRecording(ctx, tx, userID, t.RecordingID); err != nil {
+		return LinkResult{}, err
+	}
+	name, err := entityName(ctx, tx, "recording", t.RecordingID)
+	if err != nil {
+		return LinkResult{}, err
+	}
+	p := &plan{ctx: ctx, tx: tx, userID: userID}
+	res, summary, err := p.linkScoped(listenID, t, sc, name)
+	if err != nil {
+		return res, err
+	}
+	res.EditID, err = p.apply(EditMeta{Kind: "link", Summary: summary})
+	return res, err
+}
+
+// linkScoped plans a fix made from one listen, and says what it does.
+//
+//   - This listen, not later ones: the listen is linked on its own.
+//   - Every listen so far, not later ones: each is linked on its own, and
+//     the text keeps its link, so later listens go where they went.
+//   - This listen and later ones: the text is linked, and the other listens
+//     sent so far are each kept where they are.
+//   - Every listen so far and later ones: the text is linked, and all its
+//     listens follow.
+//
+// name is the target recording's name, which may be one the plan adds.
+func (p *plan) linkScoped(listenID int64, t LinkTarget, sc LinkScope, name string) (LinkResult, string, error) {
+	res := LinkResult{Name: name}
+	type row struct {
+		id              int64
+		rec, rel, fixed sql.NullInt64
+	}
+	var this row
+	var sourceID int64
+	err := p.tx.QueryRowContext(p.ctx, `SELECT id, recording_id, release_id, fixed_by, source_id FROM listens WHERE id = ? AND user_id = ? AND deleted_by IS NULL`,
+		listenID, p.userID).Scan(&this.id, &this.rec, &this.rel, &this.fixed, &sourceID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return res, "", ErrNotFound
+	}
+	if err != nil {
+		return res, "", err
+	}
+	s, err := SourceTx(p.ctx, p.tx, sourceID)
+	if err != nil {
+		return res, "", err
+	}
+	// The other listens sent with the text that still follow it.
+	rows, err := p.tx.QueryContext(p.ctx, `SELECT id, recording_id, release_id, fixed_by FROM listens
+		WHERE source_id = ? AND deleted_by IS NULL AND fixed_by IS NULL AND id <> ? ORDER BY id`, sourceID, listenID)
+	if err != nil {
+		return res, "", err
+	}
+	var others []row
+	for rows.Next() {
+		var o row
+		if err := rows.Scan(&o.id, &o.rec, &o.rel, &o.fixed); err != nil {
+			rows.Close()
+			return res, "", err
+		}
+		others = append(others, o)
+	}
+	rows.Close()
+
+	albumName := ""
+	if !t.Album.Keep && t.Album.ID != 0 {
+		if albumName, err = liveRelease(p.ctx, p.tx, p.userID, t.Album.ID); err != nil {
+			return res, "", err
+		}
+	}
+	tracks := map[[2]int64]bool{}
+	// albumFor is the album a listen ends up on, which gets the recording
+	// as a track when it hasn't got it.
+	albumFor := func(cur sql.NullInt64) (any, error) {
+		rel := t.Album.ID
+		if t.Album.Keep {
+			rel = cur.Int64
+		}
+		if rel == 0 {
+			return nil, nil
+		}
+		track := map[string]any{"release_id": rel, "recording_id": t.RecordingID, "disc": int64(1), "position": nil}
+		there, err := p.exists("release_tracks", track)
+		if err != nil {
+			return nil, err
+		}
+		if !there && !tracks[[2]int64{rel, t.RecordingID}] {
+			p.add(Change{Op: OpInsert, Table: "release_tracks", After: track})
+			tracks[[2]int64{rel, t.RecordingID}] = true
+		}
+		return rel, nil
+	}
+	alone := func(l row) error {
+		release, err := albumFor(l.rel)
+		if err != nil {
+			return err
+		}
+		before := map[string]any{"recording_id": nullable(l.rec), "release_id": nullable(l.rel), "fixed_by": nullable(l.fixed)}
+		p.changes = append(p.changes, func(editID int64) Change {
+			return Change{Table: "listens", ID: l.id, Before: before,
+				After: map[string]any{"recording_id": t.RecordingID, "release_id": release, "fixed_by": editID}}
+		})
+		return nil
+	}
+
+	from := this.rec
+	switch {
+	case sc.Later:
+		if !sc.All {
+			// The others stay where they are, each on its own.
+			for _, o := range others {
+				p.changes = append(p.changes, func(editID int64) Change {
+					return Change{Table: "listens", ID: o.id, Before: map[string]any{"fixed_by": nil}, After: map[string]any{"fixed_by": editID}}
+				})
+			}
+		} else {
+			from = s.RecordingID
+		}
+		var release any
+		if t.Album.Keep {
+			release, err = p.releaseFor(s, t.RecordingID, tracks)
+		} else {
+			release, err = albumFor(sql.NullInt64{})
+		}
+		if err != nil {
+			return res, "", err
+		}
+		p.linkSource(s, t.RecordingID, release)
+		if this.fixed.Valid {
+			// Linked on its own before, it follows its text again.
+			p.add(Change{Table: "listens", ID: this.id,
+				Before: map[string]any{"recording_id": nullable(this.rec), "release_id": nullable(this.rel), "fixed_by": this.fixed.Int64},
+				After:  map[string]any{"recording_id": t.RecordingID, "release_id": release, "fixed_by": nil}})
+		}
+	case sc.All:
+		from = s.RecordingID
+		for _, l := range append([]row{this}, others...) {
+			if err := alone(l); err != nil {
+				return res, "", err
+			}
+		}
+	default:
+		if err := alone(this); err != nil {
+			return res, "", err
+		}
+	}
+	res.Listens = 1
+	if sc.All {
+		res.Listens += len(others)
+	}
+	res.From = fromName(p.ctx, p.tx, map[int64]bool{from.Int64: true}, t.RecordingID)
+	summary := moveSummary(res.Listens, res.From, name)
+	if from.Valid && from.Int64 == t.RecordingID && !t.Album.Keep {
+		summary = fmt.Sprintf("Put %s of %s on the album %s", plural(res.Listens, "listen"), name, albumName)
+		if t.Album.ID == 0 {
+			summary = fmt.Sprintf("Took %s of %s off their album", plural(res.Listens, "listen"), name)
+		}
+	}
+	switch {
+	case sc.Later && !sc.All:
+		summary += ", and later ones sent with the same text"
+	case sc.All && !sc.Later:
+		summary += ", but not later ones"
+	}
+	return res, summary, nil
 }

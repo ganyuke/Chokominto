@@ -95,7 +95,7 @@
 <p class="help">You'll see examples from your own listens before anything changes.</p>
 </form>
 <h2 id="rules">Rules</h2>
-<p>A rule links every scrobble that matches it, now and later. Rules are saved from a listen's Fix page, under "Rules for similar listens", after linking by hand.</p>
+<p>With a rule, every matching scrobble is linked to one song, existing and future. Rules are saved on a listen's Fix page, under Scope or under "Rules for similar listens".</p>
 {{if .OwnRules}}
 <div class="table-scroll">
 <table class="table">
@@ -114,7 +114,7 @@
 <p>No rules saved yet.</p>
 {{end}}
 <h3 id="fixed-links">Fixed links</h3>
-<p>{{if .FixedLinks}}{{num .FixedLinks}} received {{if eq .FixedLinks 1}}text has a link{{else}}texts have a link{{end}} set by hand, in Review, by a merge or by an agent. Reading scrobbles never moves these. <a href="/settings/links">See fixed links</a>{{else}}No received text has a link set by hand yet.{{end}}</p>
+<p>{{if .FixedLinks}}{{num .FixedLinks}} received {{if eq .FixedLinks 1}}text was{{else}}texts were{{end}} linked by hand, in Review, by a merge or by an agent. These are never relinked automatically. <a href="/settings/links">See fixed links</a>{{else}}No received text has a link set by hand yet.{{end}}</p>
 
 <h2 id="names">Other names</h2>
 <p>Songs, artists and albums can have more than one name, like a romaji and an original-script title. Pages show the main one. You can also show others: one under the main name in tables and rankings, and a list under the title on the song's, artist's or album's own page. Choose which on the Edit tab there.</p>

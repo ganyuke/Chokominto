@@ -3,6 +3,8 @@ package resolve
 import (
 	"context"
 	"testing"
+
+	"chokominto/internal/store"
 )
 
 func TestReviewSections(t *testing.T) {
@@ -11,7 +13,7 @@ func TestReviewSections(t *testing.T) {
 	e.scrobble("Pedro Macedo Camacho", "Main Theme", "Star Citizen")
 	e.scrobble("Pedro Macedo Camacho", "Main Theme", "Other Game")
 	src := e.sourceOf("Pedro Macedo Camacho", "Main Theme", "Other Game")
-	if _, _, err := NewSong(ctx, e.db, e.user, src, 0); err != nil {
+	if _, _, err := NewSong(ctx, e.db, e.user, src, 0, store.LinkScope{}); err != nil {
 		t.Fatal(err)
 	}
 	// Now there are two, and this one names no album.

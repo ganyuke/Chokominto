@@ -180,7 +180,7 @@
 {{define "destination"}}
 <form id="move" method="post" action="{{.Path}}"></form>
 <h2 id="destination">Destination</h2>
-<p class="help">Check rows above, then pick where their listens go. Every listen sent with a checked text moves, and so do later ones sent with the same text.</p>
+<p class="help">Check rows above, then pick a destination. Every listen sent with a checked text is moved, and future scrobbles with the same text are linked there too.</p>
 {{if .Versions}}<h3 id="to-version">Version</h3>
 <p class="inline-form"><label class="visually-hidden" for="version">Version</label>
 <select id="version" name="version" form="move">{{range .Versions}}<option value="{{.Value}}">{{.Label}}</option>{{end}}</select>
@@ -199,7 +199,7 @@
 </div>
 {{else if .Query}}<p>Nothing matches “{{.Query}}”.</p>{{end}}
 <h3 id="to-album">Album</h3>
-<p class="help">The song stays the same. Only the album the checked listens count for changes.</p>
+<p class="help">The song is not changed. Only the album of the checked listens is changed.</p>
 <div class="search-row"><label class="visually-hidden" for="album">Album name</label><input type="text" id="album" name="album" form="move" value="{{.AlbumQuery}}" placeholder="Album name, in any script"><button type="submit" form="move" formmethod="get" formaction="{{.Path}}#to-album">Search</button></div>
 {{if .Albums}}
 <div class="table-scroll">

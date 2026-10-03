@@ -1,12 +1,20 @@
 package web
 
 import (
+	"database/sql"
 	"fmt"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
 	"testing"
+	"time"
+
+	"chokominto/internal/jobs"
+	"chokominto/internal/resolve"
+	"chokominto/internal/store"
 )
 
 func (e *env) sourceID(title, album string) int64 {
@@ -132,17 +140,18 @@ func TestScrobblesTab(t *testing.T) {
 	}
 }
 
-func TestFixOneListen(t *testing.T) {
+func TestFixScope(t *testing.T) {
 	e := newEnv(t, true)
 	e.scrobbleNow(
 		[3]string{"YOASOBI", "Idol", "THE BOOK 3"},
 		[3]string{"YOASOBI", "Gunjou", "THE BOOK"},
 		[3]string{"YOASOBI", "Idol", "THE BOOK 3"},
 		[3]string{"YOASOBI", "Idol", "THE BOOK 3"},
+		[3]string{"YOASOBI", "Idol", "Idol - Single"},
 	)
 	e.login()
 	var listens []int64
-	rows, _ := e.db.Reader().Query(`SELECT l.id FROM listens l JOIN sources s ON s.id = l.source_id WHERE s.title_text = 'Idol' ORDER BY l.listened_at`)
+	rows, _ := e.db.Reader().Query(`SELECT l.id FROM listens l JOIN sources s ON s.id = l.source_id WHERE s.title_text = 'Idol' AND s.album_text = 'THE BOOK 3' ORDER BY l.listened_at`)
 	for rows.Next() {
 		var id int64
 		rows.Scan(&id)
@@ -156,87 +165,152 @@ func TestFixOneListen(t *testing.T) {
 	idol := e.recordingOf(one)
 	gunjou := e.recordingOf(e.listenID("Gunjou", "THE BOOK"))
 	fix := fmt.Sprintf("/listen/%d/fix", one)
+	link := fmt.Sprintf("/listen/%d/link", one)
+	on := func(want ...int64) {
+		t.Helper()
+		for i, w := range want {
+			if got := e.recordingOf(listens[i]); got != w {
+				t.Fatalf("listen %d is on %d, want %d", i, got, w)
+			}
+		}
+	}
+	undoAll := func(body string) {
+		t.Helper()
+		for _, m := range regexp.MustCompile(`action="/changes/(\d+)/undo"`).FindAllStringSubmatch(body, -1) {
+			e.post("/changes/"+m[1]+"/undo", nil)
+		}
+		on(idol, idol, idol)
+	}
 
+	// sentLater is a new listen sent with the same text as the three.
+	at := time.Now().Unix()
+	sentLater := func() int64 {
+		t.Helper()
+		at++
+		if _, err := e.db.InsertListens(t.Context(), e.userID, "listenbrainz", nil,
+			[]store.NewListen{{ListenedAt: at, Artist: "YOASOBI", Title: "Idol", Album: "THE BOOK 3", Payload: []byte(`{}`)}}); err != nil {
+			t.Fatal(err)
+		}
+		var id int64
+		e.db.Reader().QueryRow(`SELECT id FROM listens WHERE listened_at = ?`, at).Scan(&id)
+		if id == 0 {
+			t.Fatal("the later listen wasn't stored")
+		}
+		return id
+	}
+
+	// Both choices are on the page before anything is done, in the same
+	// words whatever the text's listen count.
 	_, body, _ := e.get(fix + "?q=gunjou")
-	for _, want := range []string{"sent this exact artist, title and album 3 times", "Pick what the changes below apply to, before making one.", "All 3 listens with this text", "Only this listen",
-		"Changes below move all 3 listens sent with this text", "All 3 listens with this text, and the same on any album", "and the same in any spelling or album", "Move 3 listens here", "Read automatically", "Correction",
-		"Deletes only this listen", "The other 2 sent with the same text stay."} {
+	for _, want := range []string{"This exact artist, title and album was received 3 times.",
+		"Listens so far", "Only this listen", "Every listen sent with this text", "3 listens so far.",
+		"Future scrobbles", "Leave future scrobbles alone", "Match exact title, artist and album in future scrobbles",
+		"Match exact title and artist in future scrobbles (disregarding album)",
+		"Match roughly the title and artist in future scrobbles (disregarding spacing, capitalization and album)",
+		"Changes below are applied to every listen sent with this text so far, and to future scrobbles with the exact title, artist and album.",
+		`name="scope" value="all"`, `name="later" value="text"`, "Move 3 listens here", "Read automatically", "Correction",
+		"is deleted.", "The other 2 sent with the same text are not deleted."} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("fix page lacks %q:\n%s", want, body)
 		}
 	}
-	_, body, _ = e.get(fix + "?scope=one&q=gunjou")
-	for _, want := range []string{"Changes below move only this listen", "The other 2 sent with the same text stay as they are", "Move this listen here",
-		`name="scope" value="one"`, "Idol keeps its other 2 listens and all its names."} {
+	_, body, _ = e.get(fix + "?scope=one&later=no&q=gunjou")
+	for _, want := range []string{"Changes below are applied to this listen. Future scrobbles are left alone.", "Move this listen here",
+		`name="scope" value="one"`, `name="later" value="no"`, "The other 3 listens of Idol are not moved, and its names are not changed."} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("fix page for one listen lacks %q:\n%s", want, body)
 		}
 	}
-
-	// The widest scope moves the listens and saves the rule in one go.
-	_, body, _ = e.get(fix + "?scope=album&q=gunjou")
-	if !strings.Contains(body, `name="scope" value="album"`) || !strings.Contains(body, "A rule is saved with the move") {
-		t.Fatalf("scope with a rule:\n%s", body)
+	// The choices keep each other: picking one never resets the other.
+	if !strings.Contains(body, "/fix?scope=all&amp;later=no#scope") || !strings.Contains(body, "/fix?scope=one&amp;later=album#scope") {
+		t.Fatalf("scope links drop the other choice:\n%s", body)
 	}
-	body = e.follow(fmt.Sprintf("/listen/%d/link", one), url.Values{"recording": {fmt.Sprint(gunjou)}, "scope": {"album"}})
-	if !strings.Contains(body, "Moved 3 listens from Idol to Gunjou.") || !strings.Contains(body, "Rule saved with the move: Always link “Idol” by YOASOBI here, whatever the album.") ||
+
+	// 1. Only this listen, later ones not changed.
+	body = e.follow(link, url.Values{"recording": {fmt.Sprint(gunjou)}, "scope": {"one"}, "later": {"no"}})
+	if !strings.Contains(body, "Moved 1 listen from Idol to Gunjou.") || !strings.Contains(body, "This listen was fixed alone before") {
+		t.Fatalf("one, not later:\n%s", body)
+	}
+	on(gunjou, idol, idol)
+	if _, body, _ = e.get(fmt.Sprintf("/song/%d/scrobbles", e.exactID("song", "Gunjou"))); !strings.Contains(body, "Fixed alone") {
+		t.Fatalf("scrobbles tab:\n%s", body)
+	}
+	if _, body, _ = e.get(fmt.Sprintf("/history?text=%d", e.sourceID("Idol", "THE BOOK 3"))); !strings.Contains(body, "Only the 3 listens sent as “Idol” by YOASOBI, on THE BOOK 3.") ||
+		strings.Count(body, ">Fix</a>") != 3 {
+		t.Fatalf("history for one text:\n%s", body)
+	}
+	body = e.follow(fmt.Sprintf("/listen/%d/follow", one), nil)
+	if !strings.Contains(body, "Linked 1 listen like the others sent with the same text again.") {
+		t.Fatalf("after following the text again:\n%s", body)
+	}
+	on(idol, idol, idol)
+
+	// 2. Only this listen, and later ones with this text: the other two
+	// stay, and a new listen sent the same way goes to Gunjou.
+	body = e.follow(link, url.Values{"recording": {fmt.Sprint(gunjou)}, "scope": {"one"}, "later": {"text"}})
+	if !strings.Contains(body, "Moved 1 listen from Idol to Gunjou, and later ones sent with the same text.") {
+		t.Fatalf("one, and later:\n%s", body)
+	}
+	on(gunjou, idol, idol)
+	newest := sentLater()
+	if e.recordingOf(newest) != gunjou {
+		t.Fatal("a later listen with the same text didn't follow")
+	}
+	e.db.Write(t.Context(), func(tx *sql.Tx) error { _, err := tx.Exec(`DELETE FROM listens WHERE id = ?`, newest); return err })
+	undoAll(body)
+
+	// 3. Every listen so far, later ones not changed.
+	body = e.follow(link, url.Values{"recording": {fmt.Sprint(gunjou)}, "scope": {"all"}, "later": {"no"}})
+	if !strings.Contains(body, "Moved 3 listens from Idol to Gunjou, but not later ones.") || strings.Contains(body, "Rules for similar listens") {
+		t.Fatalf("all, not later:\n%s", body)
+	}
+	on(gunjou, gunjou, gunjou)
+	newest = sentLater()
+	if e.recordingOf(newest) != idol {
+		t.Fatal("a later listen followed, though later ones weren't to change")
+	}
+	e.db.Write(t.Context(), func(tx *sql.Tx) error { _, err := tx.Exec(`DELETE FROM listens WHERE id = ?`, newest); return err })
+	undoAll(body)
+
+	// 4. Every listen so far and later ones, which offers wider rules after.
+	body = e.follow(link, url.Values{"recording": {fmt.Sprint(gunjou)}, "scope": {"all"}, "later": {"text"}})
+	if !strings.Contains(body, "Moved 3 listens from Idol to Gunjou.") || !strings.Contains(body, "Rules for similar listens") {
+		t.Fatalf("all, and later:\n%s", body)
+	}
+	on(gunjou, gunjou, gunjou)
+	undoAll(body)
+
+	// A rule goes with either choice of listens: here only this listen
+	// moves now, and the rule is saved for any album.
+	body = e.follow(link, url.Values{"recording": {fmt.Sprint(gunjou)}, "scope": {"one"}, "later": {"album"}})
+	if !strings.Contains(body, "Moved 1 listen from Idol to Gunjou, and later ones sent with the same text.") ||
+		!strings.Contains(body, "Rule saved with the move: Always link “Idol” by YOASOBI here, whatever the album.") ||
 		!strings.Contains(body, "Undo the rule") || strings.Contains(body, "whatever the album</td>") {
-		t.Fatalf("after a move with a rule:\n%s", body)
+		t.Fatalf("one, with a rule:\n%s", body)
+	}
+	on(gunjou, idol, idol)
+	// The rule is for future scrobbles only: the listen already received
+	// with the other album is not moved, and a later one sent that way is
+	// linked by the rule.
+	single := e.listenID("Idol", "Idol - Single")
+	r := &resolve.Resolver{DB: e.db}
+	(&jobs.Runner{DB: e.db, Handlers: map[string]jobs.Handler{"resolve": r.Job, "reparse": r.ReparseJob}, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}).Drain(t.Context())
+	if e.recordingOf(single) != idol {
+		t.Fatal("the rule moved a listen that was already received")
+	}
+	if _, err := e.db.InsertListens(t.Context(), e.userID, "listenbrainz", nil,
+		[]store.NewListen{{ListenedAt: at + 100, Artist: "YOASOBI", Title: "Idol", Album: "Idol - Single", Payload: []byte(`{}`)}}); err != nil {
+		t.Fatal(err)
+	}
+	var future int64
+	e.db.Reader().QueryRow(`SELECT id FROM listens WHERE listened_at = ?`, at+100).Scan(&future)
+	if e.recordingOf(future) != gunjou {
+		t.Fatal("a future scrobble on another album wasn't linked by the rule")
 	}
 	var rules int
 	e.db.Reader().QueryRow(`SELECT count(*) FROM rules WHERE kind = 'link'`).Scan(&rules)
 	if rules != 1 {
 		t.Fatalf("%d link rules, want 1", rules)
-	}
-	// Back to how it was, for the rest of the test.
-	for _, m := range regexp.MustCompile(`action="/changes/(\d+)/undo"`).FindAllStringSubmatch(body, -1) {
-		e.post("/changes/"+m[1]+"/undo", nil)
-	}
-	if e.recordingOf(one) != idol {
-		t.Fatal("undo didn't move the listens back")
-	}
-
-	// Only this listen was Gunjou.
-	body = e.follow(fmt.Sprintf("/listen/%d/link", one), url.Values{"recording": {fmt.Sprint(gunjou)}, "scope": {"one"}})
-	if !strings.Contains(body, "Moved 1 listen from Idol to Gunjou.") || !strings.Contains(body, "This listen was fixed alone") ||
-		!strings.Contains(body, "other 2 listens") || !strings.Contains(body, "Follow the text again") {
-		t.Fatalf("after fixing one listen:\n%s", body)
-	}
-	if e.recordingOf(one) != gunjou || e.recordingOf(listens[1]) != idol || e.recordingOf(listens[2]) != idol {
-		t.Fatal("the wrong listens moved")
-	}
-	// The others say two are left with the text.
-	if _, body, _ = e.get(fmt.Sprintf("/listen/%d/fix", listens[1])); !strings.Contains(body, "All 2 listens with this text") {
-		t.Fatalf("the other listens' page:\n%s", body)
-	}
-	// It shows on the song's Scrobbles tab as fixed alone.
-	if _, body, _ = e.get(fmt.Sprintf("/song/%d/scrobbles", e.exactID("song", "Gunjou"))); !strings.Contains(body, "Fixed alone") {
-		t.Fatalf("scrobbles tab:\n%s", body)
-	}
-	// History can show just the listens sent with this text.
-	if _, body, _ = e.get(fmt.Sprintf("/history?text=%d", e.sourceID("Idol", "THE BOOK 3"))); !strings.Contains(body, "Only the 3 listens sent as “Idol” by YOASOBI, on THE BOOK 3.") ||
-		strings.Count(body, ">Fix</a>") != 3 {
-		t.Fatalf("history for one text:\n%s", body)
-	}
-	// What was done for one listen can be done for the rest, with rules
-	// offered after.
-	if _, body, _ = e.get(fix); !strings.Contains(body, "Do the same for the others") || !strings.Contains(body, "the other 2 listens sent with the same text, and later ones") {
-		t.Fatalf("no offer to do the same for the others:\n%s", body)
-	}
-	body = e.follow(fmt.Sprintf("/listen/%d/same", one), nil)
-	if !strings.Contains(body, "Moved 2 listens from Idol to Gunjou.") || !strings.Contains(body, "Rules for similar listens") || strings.Contains(body, "fixed alone") {
-		t.Fatalf("after doing the same for the others:\n%s", body)
-	}
-	if e.recordingOf(listens[1]) != gunjou || e.recordingOf(listens[2]) != gunjou {
-		t.Fatal("the others didn't move")
-	}
-	undo := regexp.MustCompile(`action="/changes/(\d+)/undo"`).FindStringSubmatch(body)
-	if code, _, _ := e.post("/changes/"+undo[1]+"/undo", nil); code != http.StatusSeeOther || e.recordingOf(listens[1]) != idol || e.recordingOf(one) != gunjou {
-		t.Fatalf("undo didn't bring back the single fix: %d", code)
-	}
-	body = e.follow(fmt.Sprintf("/listen/%d/follow", one), nil)
-	if !strings.Contains(body, "Put 1 listen back with the others sent with the same text.") || e.recordingOf(one) != idol {
-		t.Fatalf("after following the text again:\n%s", body)
 	}
 }
 
@@ -268,9 +342,21 @@ func TestFixAlbumAndCorrection(t *testing.T) {
 	if e.albumOf(wrong) != leo {
 		t.Fatal("not on the album typed")
 	}
+	// A text sent once reads the same as one sent many times.
+	if _, once, _ := e.get(fmt.Sprintf("/listen/%d/fix", e.listenID("Gurenge", "LEO-NiNE"))); !strings.Contains(once, "Every listen sent with this text") ||
+		!strings.Contains(once, "1 listen so far.") || !strings.Contains(once, "Changes below are applied to every listen sent with this text so far, and to future scrobbles with the exact title, artist and album.") {
+		t.Fatalf("a text sent once:\n%s", once)
+	}
 	// The version table lists both, with this one current.
 	if !strings.Contains(body, `<h2 id="version">Version</h2>`) || !strings.Contains(body, "<strong>Current</strong>") {
 		t.Fatalf("no version table:\n%s", body)
+	}
+	// A correction saves the scope's rule too, like any other move.
+	e.scrobbleNow([3]string{"AnotherChannel", "Opening", ""})
+	op := e.listenID("Opening", "")
+	ruled := e.follow(fmt.Sprintf("/listen/%d/correct", op), url.Values{"later": {"album"}, "artist": {"LiSA"}, "title": {"Gurenge"}, "album_text": {""}})
+	if !strings.Contains(ruled, "Rule saved with the move: Always link “Opening” by AnotherChannel here, whatever the album.") {
+		t.Fatalf("correction with a rule:\n%s", ruled)
 	}
 	// An empty correction is refused in words.
 	if code, body, _ := e.post(fix+"/correct", url.Values{"artist": {""}, "title": {""}}); code != http.StatusBadRequest || !strings.Contains(body, "Type an artist and a title.") {
@@ -284,11 +370,11 @@ func TestFixAlbumAndCorrection(t *testing.T) {
 		t.Fatalf("album search:\n%s", body)
 	}
 	body = e.follow(fix+"/album", url.Values{"to": {fmt.Sprint(single)}})
-	if !strings.Contains(body, "Put 2 listens on the album Gurenge - Single.") || e.albumOf(wrong) != single {
+	if !strings.Contains(body, "Put 2 listens of Gurenge (TV Size) on the album Gurenge - Single.") || e.albumOf(wrong) != single {
 		t.Fatalf("after changing the album:\n%s", body)
 	}
 	body = e.follow(fix+"/album", url.Values{"to": {"none"}})
-	if !strings.Contains(body, "Took 2 listens off their album.") || e.albumOf(wrong) != 0 {
+	if !strings.Contains(body, "Took 2 listens of Gurenge (TV Size) off their album.") || e.albumOf(wrong) != 0 {
 		t.Fatalf("after taking the album off:\n%s", body)
 	}
 	if code, _, _ := e.post(fix+"/album", url.Values{}); code != http.StatusBadRequest {

@@ -134,7 +134,6 @@ func New(cfg config.Config, db *store.DB, np *listenbrainz.NowPlaying, log *slog
 	mux.HandleFunc("POST /listen/{id}/album", s.member(s.fixAlbum))
 	mux.HandleFunc("POST /listen/{id}/correct", s.member(s.fixCorrect))
 	mux.HandleFunc("POST /listen/{id}/follow", s.member(s.fixFollow))
-	mux.HandleFunc("POST /listen/{id}/same", s.member(s.fixSame))
 	mux.HandleFunc("POST /listen/{id}/remember", s.member(s.fixRemember))
 	mux.HandleFunc("POST /listen/{id}/delete", s.member(s.fixDelete))
 	mux.HandleFunc("GET /artist/{id}/edit", s.member(s.editView("artist")))

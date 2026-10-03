@@ -238,8 +238,10 @@ func affected(r store.Rule, recordingID int64, all []store.SourceInfo) []store.S
 }
 
 // SaveOffer saves an offered rule as one edit and reparses the text it
-// applies to in the background. It returns the edit.
-func SaveOffer(ctx context.Context, db *store.DB, userID int64, o Offer, summary string) (int64, error) {
+// applies to in the background. It returns the edit. With futureOnly, the
+// listens already received with that text are kept where they are, and only
+// later ones are linked by the rule.
+func SaveOffer(ctx context.Context, db *store.DB, userID int64, o Offer, summary string, futureOnly bool) (int64, error) {
 	all, err := db.SourcesFor(ctx, userID)
 	if err != nil {
 		return 0, err
@@ -258,7 +260,13 @@ func SaveOffer(ctx context.Context, db *store.DB, userID int64, o Offer, summary
 		}
 		// Rules made from a link by hand go before the defaults.
 		o.Rule.Priority = 10
-		_, id, err := store.AddRuleTx(ctx, tx, userID, o.Rule, summary)
+		var keep []int64
+		if futureOnly {
+			for _, s := range affected(o.Rule, o.Target, all) {
+				keep = append(keep, s.ID)
+			}
+		}
+		_, id, err := store.AddRuleTx(ctx, tx, userID, o.Rule, summary, keep...)
 		if err != nil {
 			return err
 		}
@@ -327,8 +335,8 @@ func UndoTask(ctx context.Context, db *store.DB, userID, taskID int64) (int, err
 // NewSong splits received text off into a new song of its own, as one
 // edit. Linked text keeps its song's name and artists. Unlinked text is
 // read with the owner's rules, like auto-linking would. With listenID set,
-// only that listen goes to the new song.
-func NewSong(ctx context.Context, db *store.DB, userID, sourceID, listenID int64) (int64, store.LinkResult, error) {
+// the fix starts from that listen and sc says what it applies to.
+func NewSong(ctx context.Context, db *store.DB, userID, sourceID, listenID int64, sc store.LinkScope) (int64, store.LinkResult, error) {
 	var rec int64
 	var res store.LinkResult
 	err := db.Write(ctx, func(tx *sql.Tx) error {
@@ -365,7 +373,7 @@ func NewSong(ctx context.Context, db *store.DB, userID, sourceID, listenID int64
 				credits = append(credits, store.Credit{ArtistID: id, Role: role})
 			}
 		}
-		rec, res, err = store.NewSongTx(ctx, tx, userID, sourceID, listenID, title, credits)
+		rec, res, err = store.NewSongTx(ctx, tx, userID, sourceID, listenID, sc, title, credits)
 		return err
 	})
 	return rec, res, err
@@ -401,26 +409,26 @@ func placeTyped(ctx context.Context, tx *sql.Tx, src store.Source, t Text) (rec,
 	return rec, rel, store.RebuildRecordingArtistsTx(ctx, tx, rec)
 }
 
-// LinkAs links received text by hand to what the typed artist, title and
-// album read as, creating the song, version and album when they aren't
-// there yet. The received text itself is kept. With listenID set, only
-// that listen is linked, apart from the others sent with the same text.
-func LinkAs(ctx context.Context, db *store.DB, userID, sourceID, listenID int64, t Text) (store.LinkResult, error) {
+// LinkAs links listens by hand to what the typed artist, title and album
+// read as, creating the song, version and album when they aren't there yet.
+// The received text itself is kept. The fix starts from one listen, and sc
+// says what it applies to.
+func LinkAs(ctx context.Context, db *store.DB, userID, listenID int64, t Text, sc store.LinkScope) (store.LinkResult, error) {
 	var res store.LinkResult
 	err := db.Write(ctx, func(tx *sql.Tx) error {
-		src, err := store.SourceTx(ctx, tx, sourceID)
-		if err != nil || src.UserID != userID {
+		var sourceID int64
+		if err := tx.QueryRowContext(ctx, `SELECT source_id FROM listens WHERE id = ? AND user_id = ?`, listenID, userID).Scan(&sourceID); err != nil {
 			return store.ErrNotFound
+		}
+		src, err := store.SourceTx(ctx, tx, sourceID)
+		if err != nil {
+			return err
 		}
 		rec, rel, err := placeTyped(ctx, tx, src, t)
 		if err != nil {
 			return err
 		}
-		if listenID != 0 {
-			res, err = store.LinkListenTx(ctx, tx, userID, listenID, rec, store.AlbumChoice{ID: rel})
-			return err
-		}
-		res, err = store.LinkSourcesToTx(ctx, tx, userID, []store.SourceLink{{SourceID: sourceID, RecordingID: rec, ReleaseID: rel}}, true, "")
+		res, err = store.LinkScopedTx(ctx, tx, userID, listenID, store.LinkTarget{RecordingID: rec, Album: store.AlbumChoice{ID: rel}}, sc)
 		return err
 	})
 	return res, err

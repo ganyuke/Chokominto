@@ -48,9 +48,10 @@ type fixPage struct {
 	Same        int           // of those, the ones that follow the text
 	One         bool          // changes apply to this listen only
 	Alone       bool          // this listen was linked on its own already
-	Others      string        // alone: what doing the same for the other listens would move
-	Scope       string        // "", "one", "album" or "key", as sent with every form
-	Scopes      []scopeOption // the choices, the current one marked
+	Scope       string        // "one" or "all", as sent with every form
+	Later       string        // "no", "text", "album" or "key", as sent with every form
+	Now         []scopeOption // which listens sent so far, the current choice marked
+	Laters      []scopeOption // what later listens do, the current choice marked
 	Saved       string        // the rule saved with the move just made
 	SavedUndo   int64
 	NoRule      bool // the move was made, but its rule couldn't be saved
@@ -95,21 +96,23 @@ type scopeOption struct {
 	Current bool
 }
 
-// scopeRule is the rule to save together with a move, when the scope says
-// so: "album" (the same artist and title on any album) or "key" (also in
-// other spellings).
-func scopeRule(r *http.Request) string {
-	if v := r.FormValue("scope"); v == "album" || v == "key" {
-		return v
+// fixScope reads the two choices a Fix form carries: which of the listens
+// sent so far a change moves, and what later listens do ("no" for nothing,
+// "text" for the same text, "album" and "key" for a rule that is wider).
+// They are independent, and every combination is allowed.
+func fixScope(r *http.Request) (sc store.LinkScope, later string) {
+	sc.All = r.FormValue("scope") != "one"
+	switch later = r.FormValue("later"); later {
+	case "no", "album", "key":
+	default:
+		later = "text"
 	}
-	return ""
+	sc.Later = later != "no"
+	return sc, later
 }
 
-// scopeOne reports whether a request is about one listen only, not every
-// listen sent with the same text.
-func scopeOne(r *http.Request) bool {
-	return r.FormValue("scope") == "one"
-}
+// capital starts a sentence with s.
+func capital(s string) string { return strings.ToUpper(s[:1]) + s[1:] }
 
 func listens(n int) string {
 	if n == 1 {
@@ -132,7 +135,7 @@ func (s *Server) fixData(r *http.Request, u *store.User, id int64, query string,
 	p := fixPage{Page: Page{Title: "Fix listen", User: u}, ID: id, Action: fmt.Sprintf("/listen/%d", id),
 		When: time.Unix(f.ListenedAt, 0).In(loc).Format("2 Jan 2006, 15:04"),
 		Sent: f.Source.Listens, SentHref: fmt.Sprintf("/history?text=%d", f.Source.ID), Same: src.Listens,
-		Alone: f.Fixed, One: f.Fixed || scopeOne(r)}
+		Alone: f.Fixed}
 	s.doneNotice(r, u, &p.Page)
 	p.Received = []field{
 		{"When", p.When},
@@ -151,59 +154,47 @@ func (s *Server) fixData(r *http.Request, u *store.User, id int64, query string,
 	}
 	p.Correct = resolve.Text{Artist: f.Artist, Title: f.Title, Album: f.Album}
 
-	// Scope: every listen with this text, or this one alone.
-	p.Scope = scopeRule(r)
+	// Scope is two separate choices, worded the same however many listens
+	// the text has: which listens sent so far, and what later ones do.
+	sc, later := fixScope(r)
+	p.One, p.Scope, p.Later = !sc.All, "all", later
 	if p.One {
 		p.Scope = "one"
 	}
-	others := p.Same - 1
+	all := p.Same
 	if p.Alone {
-		others = p.Same
-	}
-	if p.Alone && f.RecordingID != 0 && (!src.RecordingID.Valid || src.RecordingID.Int64 != f.RecordingID) {
-		p.Others = "later listens sent with the same text"
-		if others > 0 {
-			p.Others = "the other " + listens(others) + " sent with the same text, and later ones"
-		}
+		all++ // this one too, though it stopped following the text
 	}
 	moving, what := 1, "this listen"
-	switch {
-	case p.One:
-		p.Move = "Move this listen here"
-		p.ScopeHelp = "Changes below move only this listen, from " + p.When + "."
-		if others > 0 {
-			p.ScopeHelp += numberPrinter.Sprintf(" The other %d sent with the same text stay as they are, and so do later ones.", others)
-		} else {
-			p.ScopeHelp += " Later listens sent with the same text are not affected."
-		}
-	case p.Same > 1:
-		moving, what = p.Same, numberPrinter.Sprintf("these %d listens", p.Same)
-		p.Move = numberPrinter.Sprintf("Move %d listens here", p.Same)
-		p.ScopeHelp = numberPrinter.Sprintf("Changes below move all %d listens sent with this text, and later listens sent with the same text.", p.Same)
-	default:
-		p.Move = "Move this listen here"
-		p.ScopeHelp = "Changes below move this listen, and later listens sent with the same text."
+	p.Move = "Move this listen here"
+	if sc.All {
+		moving, what = all, "every listen sent with this text so far"
+		p.Move = "Move " + listens(all) + " here"
 	}
-
-	// Every choice is listed before anything is picked, widest last.
-	these := "this listen and later ones with this text"
-	if p.Same > 1 {
-		these = numberPrinter.Sprintf("all %d listens with this text", p.Same)
+	link := func(scope, later string) string {
+		return fmt.Sprintf("%s/fix?scope=%s&later=%s#scope", p.Action, scope, later)
 	}
-	p.Scopes = []scopeOption{
-		{p.Action + "/fix?scope=one#scope", "Only this listen", "The one from " + p.When + ". Nothing else moves, now or later.", p.Scope == "one"},
-		{p.Action + "/fix#scope", strings.ToUpper(these[:1]) + these[1:], "Every listen sent with exactly this artist, title and album, now and later.", p.Scope == ""},
+	p.Now = []scopeOption{
+		{link("one", later), "Only this listen", "The one from " + p.When + ".", p.One},
+		{link("all", later), "Every listen sent with this text", listens(all) + " so far.", !p.One},
+	}
+	p.Laters = []scopeOption{
+		{link(p.Scope, "no"), "Leave future scrobbles alone", "No change to how future scrobbles are linked.", later == "no"},
+		{link(p.Scope, "text"), "Match exact title, artist and album in future scrobbles", "", later == "text"},
 	}
 	if strings.TrimSpace(f.Artist) != "" && strings.TrimSpace(f.Title) != "" {
-		p.Scopes = append(p.Scopes,
-			scopeOption{p.Action + "/fix?scope=album#scope", strings.ToUpper(these[:1]) + these[1:] + ", and the same on any album",
-				fmt.Sprintf("Also saves a rule: “%s” by %s always goes where you move it, whatever album is sent. Works with Version and Song below.", f.Title, f.Artist), p.Scope == "album"},
-			scopeOption{p.Action + "/fix?scope=key#scope", strings.ToUpper(these[:1]) + these[1:] + ", and the same in any spelling or album",
-				"Also saves a rule that covers other capitals, full-width letters and spacing too. Works with Version and Song below.", p.Scope == "key"})
+		p.Laters = append(p.Laters,
+			scopeOption{link(p.Scope, "album"), "Match exact title and artist in future scrobbles (disregarding album)",
+				"Saved as a rule. Existing scrobbles are not moved.", later == "album"},
+			scopeOption{link(p.Scope, "key"), "Match roughly the title and artist in future scrobbles (disregarding spacing, capitalization and album)",
+				"Saved as a rule. Existing scrobbles are not moved. Full-width letters are treated as the same letters.", later == "key"})
 	}
-	if p.Scope == "album" || p.Scope == "key" {
-		p.ScopeHelp += " A rule is saved with the move, and listed in Settings under Rules."
-	}
+	p.ScopeHelp = "Changes below are applied to " + what + map[string]string{
+		"no":    ". Future scrobbles are left alone.",
+		"text":  ", and to future scrobbles with the exact title, artist and album.",
+		"album": ", and to future scrobbles with the exact title and artist, disregarding album.",
+		"key":   ", and to future scrobbles with roughly the title and artist, disregarding spacing, capitalization and album.",
+	}[later]
 	if id, err := strconv.ParseInt(r.URL.Query().Get("saved"), 10, 64); err == nil && id > 0 {
 		if sums, err := s.db.EditSummaries(ctx, u.ID, []int64{id}); err == nil && len(sums) == 1 {
 			p.Saved, p.SavedUndo = sums[0], id
@@ -253,25 +244,28 @@ func (s *Server) fixData(r *http.Request, u *store.User, id int64, query string,
 		if len(p.Versions) < 2 {
 			p.Versions = nil
 		}
-		p.SongHelp = fmt.Sprintf("Moves %s to the song and version you pick. ", what)
+		p.SongHelp = fmt.Sprintf("%s is moved to the song and version picked. ", capital(what))
 		if left > 0 {
-			p.SongHelp += fmt.Sprintf("%s keeps its other %s and all its names. ", current, listens(left))
+			p.SongHelp += fmt.Sprintf("The other %s of %s are not moved, and its names are not changed. ", listens(left), current)
 		} else {
-			p.SongHelp += fmt.Sprintf("%s then has no listens left, and keeps its names. ", current)
+			p.SongHelp += fmt.Sprintf("No listens are left on %s after that. Its names are not changed. ", current)
 		}
 		p.SongHelp += "Nothing is merged. To join two songs completely, use Merge on the song's Edit tab."
-		p.AlbumHelp = fmt.Sprintf("Puts %s on the album you pick. The song stays the same.", what)
-		p.NewSongHelp = fmt.Sprintf("Takes %s out of %s and into a new song with the same name and artists. For two different songs that share a name.", what, current)
+		p.AlbumHelp = fmt.Sprintf("%s is put on the album picked. The song is not changed.", capital(what))
+		if later == "album" || later == "key" {
+			p.AlbumHelp += " No rule is saved for a change of album, because a rule is a link to a song."
+		}
+		p.NewSongHelp = fmt.Sprintf("%s is taken out of %s and linked to a new song with the same name and artists. For two different songs with the same name.", capital(what), current)
 	} else {
-		p.SongHelp = fmt.Sprintf("Links %s to the song and version you pick.", what)
-		p.NewSongHelp = fmt.Sprintf("Makes a new song from the received artist and title, and links %s to it.", what)
+		p.SongHelp = fmt.Sprintf("%s is linked to the song and version picked.", capital(what))
+		p.NewSongHelp = fmt.Sprintf("A new song is made from the received artist and title, and %s is linked to it.", what)
 	}
 	p.CorrectHelp = fmt.Sprintf("Type what should have been sent, like the real artist in place of a channel name, or a title with its version in brackets. "+
-		"%s to the song, version and album this reads as, which are made when they aren't there yet. The received text itself is kept.",
-		strings.ToUpper(what[:1])+what[1:]+map[bool]string{true: " goes", false: " go"}[moving == 1])
-	p.DeleteHelp = "Deletes only this listen, from " + p.When + "."
+		"%s is linked to the song, version and album that the typed text is read as. Any of them not there yet is created. The received text itself is not changed.",
+		capital(what))
+	p.DeleteHelp = "Only this listen, from " + p.When + ", is deleted."
 	if p.Sent > 1 {
-		p.DeleteHelp += numberPrinter.Sprintf(" The other %d sent with the same text stay.", p.Sent-1)
+		p.DeleteHelp += numberPrinter.Sprintf(" The other %d sent with the same text are not deleted.", p.Sent-1)
 	}
 
 	// The search starts from the title as received.
@@ -306,9 +300,9 @@ func (s *Server) fixData(r *http.Request, u *store.User, id int64, query string,
 		}
 	}
 
-	// After linking every listen with the text by hand, offer to remember it.
+	// After a change that later listens follow, offer wider rules.
 	target, _ := strconv.ParseInt(r.URL.Query().Get("remember"), 10, 64)
-	if target > 0 && !p.One && f.RecordingID == target && f.Source.LinkedByOwner {
+	if target > 0 && sc.Later && f.RecordingID == target && f.Source.LinkedByOwner {
 		offers, err := resolve.Offers(ctx, s.db, u.ID, f.Source.ID, target)
 		if err != nil {
 			return p, err
@@ -317,7 +311,7 @@ func (s *Server) fixData(r *http.Request, u *store.User, id int64, query string,
 		for _, o := range offers {
 			// A rule saved with the move isn't offered again, nor the
 			// narrower one it covers.
-			if p.Saved != "" && (o.Kind == p.Scope || (p.Scope == "key" && o.Kind == "album")) {
+			if p.Saved != "" && (o.Kind == later || (later == "key" && o.Kind == "album")) {
 				continue
 			}
 			p.Offers = append(p.Offers, offerRow{o.Kind, offerText(o, f.Artist, f.Title), o.Listens})
@@ -382,7 +376,7 @@ func (s *Server) fixLink(w http.ResponseWriter, r *http.Request, u *store.User) 
 		s.notFound(w, r)
 		return
 	}
-	f, err := s.db.FixListen(r.Context(), u.ID, id)
+	_, err := s.db.FixListen(r.Context(), u.ID, id)
 	if errors.Is(err, store.ErrNotFound) {
 		s.notFound(w, r)
 		return
@@ -396,13 +390,8 @@ func (s *Server) fixLink(w http.ResponseWriter, r *http.Request, u *store.User) 
 		s.fixError(w, r, u, id, "Pick a song first.")
 		return
 	}
-	var res store.LinkResult
-	one := f.Fixed || scopeOne(r)
-	if one {
-		res, err = s.db.LinkListen(r.Context(), u.ID, id, rec, store.AlbumChoice{Keep: true})
-	} else {
-		res, err = s.db.LinkSources(r.Context(), u.ID, []int64{f.Source.ID}, rec)
-	}
+	sc, _ := fixScope(r)
+	res, err := s.db.LinkScoped(r.Context(), u.ID, id, store.LinkTarget{RecordingID: rec, Album: store.AlbumChoice{Keep: true}}, sc)
 	switch {
 	case errors.Is(err, store.ErrNotFound), errors.Is(err, store.ErrStale):
 		s.fixError(w, r, u, id, "That song isn't there anymore. Search again.")
@@ -414,15 +403,30 @@ func (s *Server) fixLink(w http.ResponseWriter, r *http.Request, u *store.User) 
 		s.serverError(w, r, err)
 		return
 	}
-	s.log.Info("linked by hand", "user", u.Name, "listen", id, "recording", rec, "one", one)
-	if one {
-		s.fixDone(w, r, id, res.EditID, true, "")
+	s.log.Info("linked by hand", "user", u.Name, "listen", id, "recording", rec, "all", sc.All, "later", sc.Later)
+	s.fixMoved(w, r, u, id, res.EditID)
+}
+
+// fixMoved goes back to the Fix page after listens were moved to a song.
+// When later listens follow, it saves the rule the scope asks for and
+// offers the others. It's the same after Version, Song, Correction and New
+// song.
+func (s *Server) fixMoved(w http.ResponseWriter, r *http.Request, u *store.User, id, editID int64) {
+	sc, later := fixScope(r)
+	if !sc.Later || editID == 0 {
+		s.fixDone(w, r, id, editID, "linked")
 		return
 	}
-	// The rule the scope asked for is saved with the move.
-	q := url.Values{"done": {fmt.Sprint(res.EditID)}, "remember": {fmt.Sprint(rec)}}
-	if kind := scopeRule(r); kind != "" {
-		q.Set("scope", kind)
+	f, err := s.db.FixListen(r.Context(), u.ID, id)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	rec := f.RecordingID
+	q := fixQuery(r)
+	q.Set("done", fmt.Sprint(editID))
+	q.Set("remember", fmt.Sprint(rec))
+	if later == "album" || later == "key" {
 		q.Set("saved", "none")
 		offers, err := resolve.Offers(r.Context(), s.db, u.ID, f.Source.ID, rec)
 		if err != nil {
@@ -430,35 +434,39 @@ func (s *Server) fixLink(w http.ResponseWriter, r *http.Request, u *store.User) 
 			return
 		}
 		for _, o := range offers {
-			if o.Kind != kind {
+			if o.Kind != later {
 				continue
 			}
-			ruleEdit, err := resolve.SaveOffer(r.Context(), s.db, u.ID, o, offerText(o, f.Artist, f.Title))
+			ruleEdit, err := resolve.SaveOffer(r.Context(), s.db, u.ID, o, offerText(o, f.Artist, f.Title), true)
 			if err != nil {
 				s.serverError(w, r, err)
 				return
 			}
 			q.Set("saved", fmt.Sprint(ruleEdit))
-			s.log.Info("rule saved with a move", "user", u.Name, "listen", id, "kind", kind)
+			s.log.Info("rule saved with a move", "user", u.Name, "listen", id, "kind", later)
 		}
 	}
 	http.Redirect(w, r, fmt.Sprintf("/listen/%d/fix?%s#remember", id, q.Encode()), http.StatusSeeOther)
 }
 
+// fixQuery carries the scope a form was sent with back to the page.
+func fixQuery(r *http.Request) url.Values {
+	sc, later := fixScope(r)
+	q := url.Values{"later": {later}, "scope": {"all"}}
+	if !sc.All {
+		q.Set("scope", "one")
+	}
+	return q
+}
+
 // fixDone goes back to the Fix page after a change, in the same scope, to
 // the section the button was in.
-func (s *Server) fixDone(w http.ResponseWriter, r *http.Request, id, editID int64, one bool, section string) {
-	q := url.Values{}
+func (s *Server) fixDone(w http.ResponseWriter, r *http.Request, id, editID int64, section string) {
+	q := fixQuery(r)
 	if editID != 0 {
 		q.Set("done", fmt.Sprint(editID))
 	}
-	if one {
-		q.Set("scope", "one")
-	}
-	path := fmt.Sprintf("/listen/%d/fix", id)
-	if len(q) > 0 {
-		path += "?" + q.Encode()
-	}
+	path := fmt.Sprintf("/listen/%d/fix?%s", id, q.Encode())
 	if section != "" {
 		path += "#" + section
 	}
@@ -495,14 +503,8 @@ func (s *Server) fixAlbum(w http.ResponseWriter, r *http.Request, u *store.User)
 		s.fixError(w, r, u, id, "Pick an album first.")
 		return
 	}
-	one := f.Fixed || scopeOne(r)
-	var res store.LinkResult
-	var err error
-	if one {
-		res, err = s.db.LinkListen(r.Context(), u.ID, id, f.RecordingID, store.AlbumChoice{ID: album})
-	} else {
-		res, err = s.db.SetSourcesRelease(r.Context(), u.ID, []int64{f.Source.ID}, album)
-	}
+	sc, _ := fixScope(r)
+	res, err := s.db.LinkScoped(r.Context(), u.ID, id, store.LinkTarget{RecordingID: f.RecordingID, Album: store.AlbumChoice{ID: album}}, sc)
 	switch {
 	case errors.Is(err, store.ErrNotFound), errors.Is(err, store.ErrStale):
 		s.fixError(w, r, u, id, "That album isn't there anymore. Search again.")
@@ -511,24 +513,20 @@ func (s *Server) fixAlbum(w http.ResponseWriter, r *http.Request, u *store.User)
 		s.serverError(w, r, err)
 		return
 	}
-	s.log.Info("album set by hand", "user", u.Name, "listen", id, "album", album, "one", one)
-	s.fixDone(w, r, id, res.EditID, one, "album")
+	s.log.Info("album set by hand", "user", u.Name, "listen", id, "album", album, "all", sc.All, "later", sc.Later)
+	s.fixDone(w, r, id, res.EditID, "album")
 }
 
 // fixCorrect links the listens to what typed text reads as.
 func (s *Server) fixCorrect(w http.ResponseWriter, r *http.Request, u *store.User) {
-	id, f, ok := s.fixTarget(w, r, u)
+	id, _, ok := s.fixTarget(w, r, u)
 	if !ok {
 		return
 	}
-	one := f.Fixed || scopeOne(r)
-	var listen int64
-	if one {
-		listen = id
-	}
+	sc, _ := fixScope(r)
 	t := resolve.Text{Artist: strings.TrimSpace(r.PostFormValue("artist")), Title: strings.TrimSpace(r.PostFormValue("title")),
 		Album: strings.TrimSpace(r.PostFormValue("album_text"))}
-	res, err := resolve.LinkAs(r.Context(), s.db, u.ID, f.Source.ID, listen, t)
+	res, err := resolve.LinkAs(r.Context(), s.db, u.ID, id, t, sc)
 	switch {
 	case errors.Is(err, resolve.ErrNothingToGoOn):
 		s.fixError(w, r, u, id, "Type an artist and a title.")
@@ -546,28 +544,8 @@ func (s *Server) fixCorrect(w http.ResponseWriter, r *http.Request, u *store.Use
 		s.serverError(w, r, err)
 		return
 	}
-	s.log.Info("corrected by hand", "user", u.Name, "listen", id, "one", one)
-	s.fixDone(w, r, id, res.EditID, one, "linked")
-}
-
-// fixSame does for every listen with the text what was done for this one
-// alone, and then offers rules for similar listens.
-func (s *Server) fixSame(w http.ResponseWriter, r *http.Request, u *store.User) {
-	id, _, ok := s.fixTarget(w, r, u)
-	if !ok {
-		return
-	}
-	rec, res, err := s.db.LinkTextOfListen(r.Context(), u.ID, id)
-	switch {
-	case errors.Is(err, store.ErrNotFound), errors.Is(err, store.ErrStale), errors.Is(err, store.ErrBuried):
-		s.fixError(w, r, u, id, "Something changed at the same time. Try again.")
-		return
-	case err != nil:
-		s.serverError(w, r, err)
-		return
-	}
-	s.log.Info("one listen's fix applied to its text", "user", u.Name, "listen", id)
-	http.Redirect(w, r, fmt.Sprintf("/listen/%d/fix?done=%d&remember=%d#remember", id, res.EditID, rec), http.StatusSeeOther)
+	s.log.Info("corrected by hand", "user", u.Name, "listen", id, "all", sc.All, "later", sc.Later)
+	s.fixMoved(w, r, u, id, res.EditID)
 }
 
 // fixFollow makes a listen linked on its own follow its text again.
@@ -582,7 +560,7 @@ func (s *Server) fixFollow(w http.ResponseWriter, r *http.Request, u *store.User
 		return
 	}
 	s.log.Info("listen follows its text again", "user", u.Name, "listen", id)
-	s.fixDone(w, r, id, editID, false, "linked")
+	s.fixDone(w, r, id, editID, "linked")
 }
 
 func (s *Server) fixNewSong(w http.ResponseWriter, r *http.Request, u *store.User) {
@@ -600,12 +578,8 @@ func (s *Server) fixNewSong(w http.ResponseWriter, r *http.Request, u *store.Use
 		s.serverError(w, r, err)
 		return
 	}
-	one := f.Fixed || scopeOne(r)
-	var listen int64
-	if one {
-		listen = id
-	}
-	_, res, err := resolve.NewSong(r.Context(), s.db, u.ID, f.Source.ID, listen)
+	sc, _ := fixScope(r)
+	_, res, err := resolve.NewSong(r.Context(), s.db, u.ID, f.Source.ID, id, sc)
 	switch {
 	case errors.Is(err, resolve.ErrNothingToGoOn):
 		s.fixError(w, r, u, id, "This listen has no artist or title to make a song from.")
@@ -618,7 +592,7 @@ func (s *Server) fixNewSong(w http.ResponseWriter, r *http.Request, u *store.Use
 		return
 	}
 	s.log.Info("new song by hand", "user", u.Name, "listen", id)
-	s.fixDone(w, r, id, res.EditID, one, "linked")
+	s.fixMoved(w, r, u, id, res.EditID)
 }
 
 func (s *Server) fixRemember(w http.ResponseWriter, r *http.Request, u *store.User) {
@@ -657,7 +631,7 @@ func (s *Server) fixRemember(w http.ResponseWriter, r *http.Request, u *store.Us
 		s.fixError(w, r, u, id, "That can't be remembered anymore, because the listen was linked somewhere else since.")
 		return
 	}
-	editID, err := resolve.SaveOffer(r.Context(), s.db, u.ID, *offer, offerText(*offer, f.Artist, f.Title))
+	editID, err := resolve.SaveOffer(r.Context(), s.db, u.ID, *offer, offerText(*offer, f.Artist, f.Title), false)
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		s.fixError(w, r, u, id, "That song isn't there anymore.")

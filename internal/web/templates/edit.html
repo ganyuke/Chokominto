@@ -12,7 +12,7 @@
 <input type="text" id="rename-name" name="name" value="{{with index .Aliases 0}}{{.Name}}{{end}}" required>
 <button type="submit">Rename</button>
 </form>
-<p class="help">Listens already linked stay with this {{.Noun}}. Scrobbles sent with the old name still end up here.</p>
+<p class="help">Listens already linked are not changed. Scrobbles sent with the old name are still linked here.</p>
 
 <h3 id="all-names">All names</h3>
 <form id="names" method="post" action="{{.Path}}/edit"><input type="hidden" name="do" value="names"></form>
@@ -134,7 +134,7 @@
 {{if gt (len .SongAlbums) 1}}<p class="inline-form"><label for="merge-albums-into">Merge checked into</label>
 <select id="merge-albums-into" name="into" form="merge-albums">{{range .SongAlbums}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select>
 <button type="submit" form="merge-albums">Merge albums</button></p>
-<p class="help">For one album that shows up under several names. The checked albums' listens, songs and names all move to the album picked, and later scrobbles sent with any of those names end up there too. A single for one version is an album of its own and is best left apart.</p>{{end}}
+<p class="help">For one album that shows up under several names. The checked albums' listens, songs and names are all moved to the album picked, and future scrobbles sent with any of those names are linked there too. A single for one version is a separate album and is best not merged.</p>{{end}}
 <p class="help">A listen on the wrong album is moved on the <a href="{{.Path}}/scrobbles">Scrobbles</a> tab.</p>
 {{end}}
 
@@ -219,9 +219,9 @@
 {{with .Picture}}
 <h3 id="picture">Picture</h3>
 {{if .Song}}{{if .Current}}<p><img class="cover" src="{{.Current}}" alt="" width="220" height="220"></p>{{else}}<p>No picture yet. None of this song's albums has one either.</p>{{end}}
-{{if .Chosen}}<p class="help">This song's own picture. It shows for every version, in place of the album's cover.</p>
+{{if .Chosen}}<p class="help">This song's own picture. It is shown for every version, in place of the album's cover.</p>
 <form class="actions" method="post" action="{{.Path}}/edit"><input type="hidden" name="do" value="picture-remove"><button type="submit">Use the album's picture</button></form>
-{{else}}{{with .FromAlbum}}<p class="help">The cover of the album {{template "name" .}}, where this song is listened to most. A picture uploaded here shows for this song in its place. To change the album's own cover, use <a href="{{.Href}}/edit#picture">the album's Edit tab</a>.</p>{{end}}{{end}}
+{{else}}{{with .FromAlbum}}<p class="help">The cover of the album {{template "name" .}}, where this song is listened to most. A picture uploaded here is shown for this song in its place. To change the album's own cover, use <a href="{{.Href}}/edit#picture">the album's Edit tab</a>.</p>{{end}}{{end}}
 {{else}}<div data-live="{{.Live}}" aria-live="polite">{{template "picture-found" .}}</div>{{end}}
 <form class="inline-form" method="post" action="{{.Path}}/picture" enctype="multipart/form-data">
 <label class="visually-hidden" for="picture-file">Picture file</label>
@@ -235,10 +235,10 @@
 <p class="help">Adds the English, romaji and Japanese names{{if eq .Kind "artist"}}, and offers the members{{end}}. You see them before anything is added.</p>
 
 <h3 id="merge">Merge</h3>
-<p class="help">Merging joins two {{.Noun}}s into one. This {{.Noun}}'s {{.MergeMoves}} move to the {{.Noun}} you pick, and this page then leads there. The names come along hidden, so scrobbles sent with them still end up there. Undo puts it all back.</p>
+<p class="help">With a merge, two {{.Noun}}s are joined into one. This {{.Noun}}'s {{.MergeMoves}} are moved to the {{.Noun}} picked, and this page is redirected there. The names are added there as hidden names, so scrobbles sent with them are still linked there. All of it can be undone.</p>
 {{if ne .Kind "artist"}}<p class="help">To move only some listens, use Fix on a listen or the <a href="{{.Path}}/scrobbles">Scrobbles</a> tab.</p>{{end}}
 {{if .Related}}<h4 id="related">Related albums</h4>
-<p class="help">Albums that hold a version of a song on this album. The same album under another name can be merged either way.</p>
+<p class="help">Albums with a version of a song that is also on this album. The same album under another name can be merged either way.</p>
 <div class="table-scroll">
 <table class="table">
 <thead><tr><th scope="col" class="fill">Album</th><th scope="col" class="num">Songs shared</th><th scope="col" class="num">Listens</th><th scope="col" class="action"><span class="muted">Action</span></th></tr></thead>

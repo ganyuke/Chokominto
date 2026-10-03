@@ -282,9 +282,9 @@ func formatCount(n int) string {
 
 // NewSongTx splits received text off into a new song with one recording
 // and the given credits, as one edit. The artists must exist already. The
-// listens keep the album they're on. With listenID set, only that listen
-// goes to the new song, apart from the others sent with the same text.
-func NewSongTx(ctx context.Context, tx *sql.Tx, userID, sourceID, listenID int64, title string, credits []Credit) (int64, LinkResult, error) {
+// listens keep the album they're on. With listenID set, the fix starts from
+// that listen and sc says what it applies to (see linkScoped).
+func NewSongTx(ctx context.Context, tx *sql.Tx, userID, sourceID, listenID int64, sc LinkScope, title string, credits []Credit) (int64, LinkResult, error) {
 	var res LinkResult
 	s, err := SourceTx(ctx, tx, sourceID)
 	if err != nil || s.UserID != userID {
@@ -315,24 +315,11 @@ func NewSongTx(ctx context.Context, tx *sql.Tx, userID, sourceID, listenID int64
 			"role": c.Role, "position": int64(i), "credited_as": nil}})
 	}
 	if listenID != 0 {
-		var lrec, lrel, fixed sql.NullInt64
-		err := tx.QueryRowContext(ctx, `SELECT recording_id, release_id, fixed_by FROM listens WHERE id = ? AND user_id = ? AND source_id = ? AND deleted_by IS NULL`,
-			listenID, userID, sourceID).Scan(&lrec, &lrel, &fixed)
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, res, ErrNotFound
-		}
+		moved, _, err := p.linkScoped(listenID, LinkTarget{RecordingID: rec, Album: AlbumChoice{Keep: true}}, sc, title)
 		if err != nil {
 			return 0, res, err
 		}
-		if lrel.Valid {
-			p.add(Change{Op: OpInsert, Table: "release_tracks", After: map[string]any{"release_id": lrel.Int64, "recording_id": rec, "disc": int64(1), "position": nil}})
-		}
-		before := map[string]any{"recording_id": nullable(lrec), "release_id": nullable(lrel), "fixed_by": nullable(fixed)}
-		p.changes = append(p.changes, func(editID int64) Change {
-			return Change{Table: "listens", ID: listenID, Before: before,
-				After: map[string]any{"recording_id": rec, "release_id": nullable(lrel), "fixed_by": editID}}
-		})
-		res.Listens = 1
+		res.Listens = moved.Listens
 	} else {
 		rel, err := p.releaseFor(s, rec, map[[2]int64]bool{})
 		if err != nil {
@@ -347,8 +334,23 @@ func NewSongTx(ctx context.Context, tx *sql.Tx, userID, sourceID, listenID int64
 }
 
 // AddRuleTx saves a new rule as one edit and returns the rule and the edit.
-func AddRuleTx(ctx context.Context, tx *sql.Tx, userID int64, r Rule, summary string) (int64, int64, error) {
+// The listens of keepSources are each kept where they are, as part of the
+// same edit, for a rule meant for future scrobbles only: the text is linked
+// again by the rule, and the listens received before it are not moved.
+func AddRuleTx(ctx context.Context, tx *sql.Tx, userID int64, r Rule, summary string, keepSources ...int64) (int64, int64, error) {
 	p := &plan{ctx: ctx, tx: tx, userID: userID}
+	if len(keepSources) > 0 {
+		kept, err := ids(ctx, tx, `SELECT id FROM listens WHERE source_id IN (SELECT value FROM json_each(?))
+			AND user_id = ? AND deleted_by IS NULL AND fixed_by IS NULL ORDER BY id`, jsonIDs(keepSources), userID)
+		if err != nil {
+			return 0, 0, err
+		}
+		for _, id := range kept {
+			p.changes = append(p.changes, func(editID int64) Change {
+				return Change{Table: "listens", ID: id, Before: map[string]any{"fixed_by": nil}, After: map[string]any{"fixed_by": editID}}
+			})
+		}
+	}
 	id, err := p.newID("rules")
 	if err != nil {
 		return 0, 0, err

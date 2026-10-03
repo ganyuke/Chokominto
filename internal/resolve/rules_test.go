@@ -103,7 +103,7 @@ func TestRememberAnyAlbum(t *testing.T) {
 	if offers[0].Listens != 1 {
 		t.Errorf("any album would move %d other listens, want 1", offers[0].Listens)
 	}
-	edit, err := SaveOffer(ctx, e.db, e.user, offers[0], "Always link Idol by YOASOBI to アイドル")
+	edit, err := SaveOffer(ctx, e.db, e.user, offers[0], "Always link Idol by YOASOBI to アイドル", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +157,7 @@ func TestRememberTitlesLikeThis(t *testing.T) {
 	if clean == nil || clean.Prefix != "【MV】YOASOBI「" || clean.Suffix != "」Official Music Video" {
 		t.Fatalf("offers %+v", offers)
 	}
-	if _, err := SaveOffer(ctx, e.db, e.user, *clean, "Remove the video title"); err != nil {
+	if _, err := SaveOffer(ctx, e.db, e.user, *clean, "Remove the video title", false); err != nil {
 		t.Fatal(err)
 	}
 	e.scrobble("YOASOBI", "【MV】YOASOBI「群青」Official Music Video", "")
@@ -179,7 +179,7 @@ func TestNoTitleRulesWhenAmbiguous(t *testing.T) {
 	}
 	// Split: the other game's listens get a song of their own.
 	src := e.sourceOf("Pedro Macedo Camacho", "Main Theme", "Other Game")
-	rec, _, err := NewSong(ctx, e.db, e.user, src, 0)
+	rec, _, err := NewSong(ctx, e.db, e.user, src, 0, store.LinkScope{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +204,7 @@ func TestNewSongUndo(t *testing.T) {
 	src := e.sourceOf("Ayase", "アイドル", "")
 	before := e.q(`SELECT id || ' ' || recording_id FROM sources`)
 	songs := e.id(`SELECT count(*) FROM songs`)
-	_, res, err := NewSong(ctx, e.db, e.user, src, 0)
+	_, res, err := NewSong(ctx, e.db, e.user, src, 0, store.LinkScope{})
 	if err != nil {
 		t.Fatal(err)
 	}
