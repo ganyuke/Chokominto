@@ -714,6 +714,8 @@ Two runners, each with one worker: one for linking and Review (`resolve`, `repar
 
 ## Web
 
+- **Changes paging:** a page holds 50 rows, where a task counts as one row however many edits it holds (`ChangeRows`). Before 2026-10-03 pages were cut by edits, so a large task left the pages after it empty.
+- **Coming back after a form:** rendering adds a hidden `at` field to every post form, naming the nearest heading or row with an `id` above it (`markForms`), and the redirect after the post gets it as its fragment when it leads back to the same page and has none (`jumpBack`, in `internal/web/anchors.go`). Templates only need ids on headings.
 - **Routes:** `/`, `/history`, `/top/songs`, `/top/artists`, `/top/albums`, `/song/{id}`, `/recording/{id}`, `/artist/{id}`, `/album/{id}`, `/listen/{id}/fix`, `/scrobble`, `/review`, `/changes`, `/settings`, `/login`. Merged entity ids redirect to the survivor.
 - **No JavaScript needed** for reading, sorting and paging. Small vanilla scripts add search-as-you-type on Scrobble and inline actions on Review. All script and CSS are files under `static/`, with no inline code, so the CSP stays strict.
 - **Live parts.** `static/live.js` keeps elements marked `data-live` current while the tab is visible: now playing on Home and History, Recent listens on Home, the newest History page, and the sorting-out note on Home and rankings. It asks `GET /live?parts=…` (same access as the pages) every 15 s, or every 5 s while the sorting note is up. The answer has each part rendered by the same template as the page, and the script only swaps a part whose HTML changed. The sorting note appears at 25 songs waiting (as before) and then counts down to zero, where it goes away. Older History pages don't update, so paging stays put.

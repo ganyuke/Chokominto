@@ -129,3 +129,17 @@
 {{else}}
 <p>No listens yet.{{if .User}} <a href="/settings#scrobblers">Set up a scrobbler</a> to start.{{end}}</p>
 {{end}}{{end}}
+
+{{define "picture-found"}}{{$path := .Path}}
+{{if .Current}}<p><img class="cover" src="{{.Current}}" alt="" width="220" height="220"></p>
+{{if .Chosen}}<p class="help">You chose this one, so it stays.</p>{{end}}{{end}}
+{{if .Looking}}<p data-looking>{{if .Current}}Looking for other pictures.{{else}}Looking for one.{{end}} What's found shows here.</p>
+{{else if .Candidates}}<p class="help">Pictures that might fit. Pick one to use it.</p>
+{{else if eq .Result "notfound"}}<p>{{if .Current}}No other pictures found.{{else}}No picture found. You can upload one.{{end}}</p>
+{{else if eq .Result "error"}}<p>The picture sites couldn't be reached. Look again later.</p>
+{{else if not .Current}}<p>No picture yet.</p>{{end}}
+{{if .Candidates}}
+<ul class="candidates">{{range .Candidates}}<li><img src="/art/candidate/{{.ID}}" alt="" width="110" height="110" loading="lazy"><span>{{.Title}}{{with .Artist}} <span class="muted">{{.}}</span>{{end}}</span><form method="post" action="{{$path}}/edit"><input type="hidden" name="do" value="picture-choose"><input type="hidden" name="candidate" value="{{.ID}}"><button type="submit">Use this</button></form></li>{{end}}</ul>
+{{end}}
+{{if and .Online (not .Chosen) (not .Looking)}}<form method="post" action="{{$path}}/edit"><input type="hidden" name="do" value="picture-look"><button type="submit">Look again</button></form>{{end}}
+{{end}}

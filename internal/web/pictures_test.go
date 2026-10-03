@@ -3,6 +3,7 @@ package web
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"fmt"
 	"image"
 	"image/color"
@@ -140,4 +141,77 @@ func TestPictures(t *testing.T) {
 	if _, body, _ := e.get("/settings"); !strings.Contains(body, "Look for pictures online") {
 		t.Fatal("not switched off")
 	}
+}
+
+// Look again says that it's looking, and then how it ended.
+func TestLookAgainSaysWhatHappened(t *testing.T) {
+	ctx := context.Background()
+	e := newEnv(t, true)
+	e.scrobbleNow([3]string{"YOASOBI", "アイドル", "THE BOOK 3"})
+	var album int64
+	e.db.Reader().QueryRow(`SELECT id FROM releases`).Scan(&album)
+	path := fmt.Sprintf("/album/%d", album)
+	e.login()
+	// finish ends the lookup the way the background lookup would.
+	finish := func(state string) {
+		t.Helper()
+		err := e.db.Write(ctx, func(tx *sql.Tx) error {
+			if _, err := tx.Exec(`DELETE FROM jobs WHERE kind = 'artwork'`); err != nil {
+				return err
+			}
+			return store.SetLookupTx(ctx, tx, "release", album, state, 1, "")
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	shows := func(want string) {
+		t.Helper()
+		if _, body, _ := e.get(path + "/edit"); !strings.Contains(body, want) {
+			t.Errorf("Edit view lacks %q", want)
+		}
+	}
+
+	finish("notfound")
+	shows("No picture found. You can upload one.")
+	shows("Look again</button>")
+
+	code, _, h := e.post(path+"/edit", url.Values{"do": {"picture-look"}})
+	if code != http.StatusSeeOther || !strings.HasSuffix(h.Get("Location"), "/edit#picture") {
+		t.Fatalf("look again: %d %s", code, h.Get("Location"))
+	}
+	shows("<p data-looking>Looking for one.")
+	_, body, _ := e.get(path + "/edit")
+	if strings.Contains(body, "Look again</button>") {
+		t.Error("Look again offered while looking")
+	}
+	// The open page hears about it without reloading.
+	live := e.live(fmt.Sprintf("picture:release:%d", album))
+	if live.Picture == nil || !strings.Contains(*live.Picture, "data-looking") {
+		t.Fatalf("live picture part: %v", live.Picture)
+	}
+
+	finish("error")
+	shows("The picture sites couldn't be reached. Look again later.")
+	if live = e.live(fmt.Sprintf("picture:release:%d", album)); live.Picture == nil || strings.Contains(*live.Picture, "data-looking") {
+		t.Fatal("live picture part still looking")
+	}
+
+	finish("candidates")
+	e.db.AddCandidates(ctx, "release", album, []store.Candidate{{Origin: "itunes", URL: "https://example.org/a.jpg", Title: "THE BOOK 3", Artist: "YOASOBI"}})
+	shows("Pictures that might fit. Pick one to use it.")
+
+	// With a picture found by itself, it looks for others.
+	e.db.Write(ctx, func(tx *sql.Tx) error {
+		id, err := store.AddArtworkTx(ctx, tx, store.Artwork{SHA256: "ab", Format: "jpeg", Width: 500, Height: 500, Origin: "itunes"}, "")
+		if err != nil {
+			return err
+		}
+		_, err = store.SetArtworkTx(ctx, tx, e.userID, "release", album, id, false, true)
+		return err
+	})
+	e.post(path+"/edit", url.Values{"do": {"picture-look"}})
+	shows("Looking for other pictures.")
+	finish("notfound")
+	shows("No other pictures found.")
 }

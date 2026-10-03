@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 )
 
 // Pictures for albums and artists. See docs/architecture.md, "Artwork".
@@ -167,6 +168,7 @@ type ArtworkItem struct {
 	NameKeys   map[string]bool // match and romaji keys of every name
 	ArtistKeys map[string]bool // albums: match and romaji keys of every name of every artist
 	HasArtwork bool
+	Pinned     bool // the owner chose or uploaded the picture
 	FindOnline bool
 }
 
@@ -178,9 +180,9 @@ func (db *DB) ArtworkItem(ctx context.Context, kind string, id int64) (ArtworkIt
 	it := ArtworkItem{ID: id, NameKeys: map[string]bool{}, ArtistKeys: map[string]bool{}}
 	var mbid sql.NullString
 	var merged sql.NullInt64
-	err := db.r.QueryRowContext(ctx, `SELECT e.user_id, e.name, e.mbid, e.merged_into, e.artwork_id IS NOT NULL, u.find_artwork
+	err := db.r.QueryRowContext(ctx, `SELECT e.user_id, e.name, e.mbid, e.merged_into, e.artwork_id IS NOT NULL, e.artwork_pinned, u.find_artwork
 		FROM `+table+` e JOIN users u ON u.id = e.user_id WHERE e.id = ?`, id).
-		Scan(&it.UserID, &it.Name, &mbid, &merged, &it.HasArtwork, &it.FindOnline)
+		Scan(&it.UserID, &it.Name, &mbid, &merged, &it.HasArtwork, &it.Pinned, &it.FindOnline)
 	if errors.Is(err, sql.ErrNoRows) || merged.Valid {
 		return it, ErrNotFound
 	}
@@ -379,8 +381,32 @@ func (db *DB) CandidateThumb(ctx context.Context, id int64) (string, string, str
 	return url, sha, format, err
 }
 
-// ClearCandidates forgets an item's candidates, once one is chosen or the
-// owner looks again.
+// LookAgain starts an item's lookup over at the owner's request: its
+// candidates and the last result are forgotten, and a lookup is queued for
+// now. With no result on record, the lookup also runs for an item that has
+// a picture, to offer others.
+func (db *DB) LookAgain(ctx context.Context, kind string, id int64) error {
+	return db.Write(ctx, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM artwork_candidates WHERE entity_type = ? AND entity_id = ?`, kind, id); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM artwork_lookups WHERE entity_type = ? AND entity_id = ?`, kind, id); err != nil {
+			return err
+		}
+		return EnqueueTx(ctx, tx, "artwork", fmt.Sprintf("%s:%d:0", kind, id), "", 0)
+	})
+}
+
+// ArtworkLooking reports whether a lookup for the item is queued for now
+// or running. Retries waiting for later don't count.
+func (db *DB) ArtworkLooking(ctx context.Context, kind string, id int64) (bool, error) {
+	var looking bool
+	err := db.r.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM jobs WHERE kind = 'artwork' AND key = ?)`,
+		fmt.Sprintf("%s:%d:0", kind, id)).Scan(&looking)
+	return looking, err
+}
+
+// ClearCandidates forgets an item's candidates, once one is chosen.
 func (db *DB) ClearCandidates(ctx context.Context, kind string, id int64) error {
 	return db.Write(ctx, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, `DELETE FROM artwork_candidates WHERE entity_type = ? AND entity_id = ?`, kind, id)

@@ -1,5 +1,6 @@
 // Keeps parts of the page current while it's open: what's playing, the
-// newest listens and the note about sorting out an import. Each part is an
+// newest listens, the note about sorting out an import and the pictures
+// found for an item. Each part is an
 // element with data-live, refilled from /live. Pages work the same without
 // this, just as of when they loaded.
 (() => {
@@ -38,7 +39,7 @@
         else if (el.textContent !== s.text) el.textContent = s.text;
         continue;
       }
-      const html = data[name];
+      const html = data[name.split(":")[0]]; // "picture:artist:12" is answered as "picture"
       if (typeof html !== "string") continue;
       // Only parts that changed are replaced, so nothing flickers and
       // screen readers only hear about real changes.
@@ -51,8 +52,8 @@
   function schedule() {
     clearTimeout(timer);
     if (document.hidden || !parts().length) return;
-    const sorting = document.querySelector('[data-live="sorting"]');
-    timer = setTimeout(refresh, sorting ? quick : slow);
+    const waiting = document.querySelector('[data-live="sorting"], [data-looking]');
+    timer = setTimeout(refresh, waiting ? quick : slow);
   }
 
   document.addEventListener("visibilitychange", () => {

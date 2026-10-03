@@ -107,15 +107,25 @@ func (f *Finder) Job(ctx context.Context, j store.Job) error {
 	if err != nil {
 		return err
 	}
-	// Found pictures are never looked for again, and the owner's choice is
-	// never replaced.
-	if item.HasArtwork || !item.FindOnline {
-		return nil
+	if !item.FindOnline || item.Pinned {
+		return nil // the owner's choice is never replaced
+	}
+	// Found pictures are never looked for again, unless the owner asked
+	// (store.LookAgain forgets the last result). Then the picture stays and
+	// what's found is offered to choose from.
+	if item.HasArtwork {
+		last, err := f.DB.Lookup(ctx, kind, id)
+		if err != nil {
+			return err
+		}
+		if last != "" {
+			return nil
+		}
 	}
 	for k := range NameKeysOf(item.Names) {
 		item.NameKeys[k] = true
 	}
-	state, lookErr := f.look(ctx, kind, item)
+	state, lookErr := f.look(ctx, kind, item, item.HasArtwork)
 	tries++
 	return f.DB.Write(ctx, func(tx *sql.Tx) error {
 		msg := ""
@@ -125,7 +135,7 @@ func (f *Finder) Job(ctx context.Context, j store.Job) error {
 		if err := store.SetLookupTx(ctx, tx, kind, id, state, tries, msg); err != nil {
 			return err
 		}
-		if state == "found" {
+		if state == "found" || item.HasArtwork {
 			return nil
 		}
 		at := f.now().Add(retryAfter(state, tries)).Unix()
@@ -141,8 +151,9 @@ func (f *Finder) now() time.Time {
 }
 
 // look tries each source in turn. It returns found, candidates, notfound
-// or error (when a source couldn't be reached and nothing was found).
-func (f *Finder) look(ctx context.Context, kind string, item store.ArtworkItem) (string, error) {
+// or error (when a source couldn't be reached and nothing was found). With
+// offer, nothing is used: every result becomes a candidate.
+func (f *Finder) look(ctx context.Context, kind string, item store.ArtworkItem, offer bool) (string, error) {
 	var searches []func() ([]Found, error)
 	if kind == "release" {
 		if item.MBID != "" {
@@ -164,7 +175,7 @@ func (f *Finder) look(ctx context.Context, kind string, item store.ArtworkItem) 
 			continue
 		}
 		for _, r := range results {
-			if !matches(kind, item, r) {
+			if offer || !matches(kind, item, r) {
 				candidates = append(candidates, r)
 				continue
 			}

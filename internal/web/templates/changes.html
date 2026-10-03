@@ -6,22 +6,22 @@
 <ul>{{range .}}<li>{{.}}</li>{{end}}</ul>
 </div>
 {{end}}
-{{if .Edits}}
+{{if .Rows}}
 <div class="table-scroll">
 <table class="table">
 <thead><tr><th scope="col" class="time">When</th><th scope="col" class="fill">Change</th><th scope="col" class="action"><span class="muted">Action</span></th></tr></thead>
 <tbody>
-{{range .Rows}}{{with .Task}}<tr>
+{{range .Rows}}{{with .Task}}<tr id="task-{{.ID}}">
 <td class="time">{{.When}}</td>
 <td class="fill"><details class="task"><summary>{{if .Name}}{{.Name}}{{else}}Changes made together{{end}}{{with .Agent}} <span class="muted">(by {{.}})</span>{{end}} <span class="muted">· {{num (len .Edits)}} {{if eq (len .Edits) 1}}change{{else}}changes{{end}}</span></summary>
-<ul class="plain">{{range .Edits}}<li>{{.Summary}} <span class="muted">{{.When}}</span> {{if .Undone}}<span class="muted">Undone</span>{{else}}<form class="inline" method="post" action="/changes/{{.ID}}/undo"><button type="submit">Undo</button></form>{{end}}</li>{{end}}</ul>
+<ul class="plain">{{range .Edits}}<li>{{.Summary}} <span class="muted">{{.When}}</span> {{if .Undone}}<span class="muted">Undone</span>{{else}}<form class="inline" method="post" action="/changes/{{.ID}}/undo"><input type="hidden" name="back" value="{{$.Here}}"><button type="submit">Undo</button></form>{{end}}</li>{{end}}</ul>
 </details></td>
-<td class="action">{{if .Undone}}<span class="muted">Undone</span>{{else}}<form class="inline" method="post" action="/changes/tasks/{{.ID}}/undo"><button type="submit">Undo all</button></form>{{end}}</td>
+<td class="action">{{if .Undone}}<span class="muted">Undone</span>{{else}}<form class="inline" method="post" action="/changes/tasks/{{.ID}}/undo"><input type="hidden" name="back" value="{{$.Here}}"><button type="submit">Undo all</button></form>{{end}}</td>
 </tr>
-{{else}}<tr>
+{{else}}<tr id="change-{{.ID}}">
 <td class="time">{{.When}}</td>
 <td class="fill">{{.Summary}}{{with .Agent}} <span class="muted">(by {{.}})</span>{{end}}</td>
-<td class="action">{{if .Undone}}<span class="muted">Undone</span>{{else}}<form class="inline" method="post" action="/changes/{{.ID}}/undo"><button type="submit">Undo</button></form>{{end}}</td>
+<td class="action">{{if .Undone}}<span class="muted">Undone</span>{{else}}<form class="inline" method="post" action="/changes/{{.ID}}/undo"><input type="hidden" name="back" value="{{$.Here}}"><button type="submit">Undo</button></form>{{end}}</td>
 </tr>
 {{end}}{{end}}</tbody>
 </table>

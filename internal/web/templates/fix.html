@@ -1,7 +1,7 @@
 {{define "content"}}
 <h1>Fix listen</h1>
 
-<h2>Received</h2>
+<h2 id="received">Received</h2>
 <table class="table kv">
 <tbody>
 {{range .Received}}<tr><th scope="row">{{.Label}}</th><td>{{dash .Value}}</td></tr>
@@ -9,7 +9,7 @@
 </tbody>
 </table>
 
-<h2>Linked to</h2>
+<h2 id="linked">Linked to</h2>
 {{if .Linked}}
 <p>{{template "name" (withVersion .Song .Version)}} — {{template "names" .Artists}}{{with .Album}} — {{template "name" .}}{{end}}</p>
 {{else}}
@@ -29,7 +29,7 @@
 </div>
 {{end}}
 
-<h2>Link to another song</h2>
+<h2 id="link">Link to another song</h2>
 <form class="search" method="get" action="{{.Action}}/fix" role="search">
 <label for="q">Song, artist or album, in any script</label>
 <div class="search-row"><input type="text" id="q" name="q" value="{{.Query}}"><button type="submit">Search</button></div>
@@ -54,7 +54,7 @@
 <p class="help">For a song that isn't here yet, or one that was mixed up with another of the same name.</p>
 </form>
 
-<h2>Delete</h2>
+<h2 id="delete">Delete</h2>
 <form method="post" action="{{.Action}}/delete">
 <button class="danger" type="submit">Delete listen</button>
 </form>

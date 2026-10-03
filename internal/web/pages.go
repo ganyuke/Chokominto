@@ -519,19 +519,28 @@ type changeRow struct {
 type changesPage struct {
 	Page
 	Rows     []changeRow
-	Edits    []editRow
 	Conflict []string
+	Here     string // this page of Changes, for Undo to come back to
 	Newer    string
 	Older    string
 }
 
 func (s *Server) changesData(r *http.Request, u *store.User) (changesPage, error) {
-	p := changesPage{Page: Page{Title: "Changes", Nav: "changes", User: u}}
+	p := changesPage{Page: Page{Title: "Changes", Nav: "changes", User: u}, Here: "/changes"}
 	s.doneNotice(r, u, &p.Page)
 	before, _ := strconv.ParseInt(r.URL.Query().Get("before"), 10, 64)
-	es, err := s.db.Edits(r.Context(), u.ID, before, changesPageSize)
+	if before > 0 {
+		p.Here = fmt.Sprintf("/changes?before=%d", before)
+		p.Newer = "/changes"
+	}
+	// One more than fits, to know whether there's an older page.
+	es, err := s.db.ChangeRows(r.Context(), u.ID, before, changesPageSize+1)
 	if err != nil {
 		return p, err
+	}
+	if len(es) > changesPageSize {
+		es = es[:changesPageSize]
+		p.Older = fmt.Sprintf("/changes?before=%d", es[len(es)-1].ID)
 	}
 	loc := location(*u)
 	row := func(e store.Edit) editRow {
@@ -545,21 +554,12 @@ func (s *Server) changesData(r *http.Request, u *store.User) (changesPage, error
 	if err != nil {
 		return p, err
 	}
-	// A task is shown once, where its newest edit is, with all its edits.
-	shown := map[int64]bool{}
+	// A task is one row, where its newest edit is, with all its edits.
 	for _, e := range es {
-		p.Edits = append(p.Edits, row(e))
 		t, ok := tasks[e.TaskID]
 		if !ok {
 			p.Rows = append(p.Rows, changeRow{editRow: row(e)})
 			continue
-		}
-		if shown[t.ID] {
-			continue
-		}
-		shown[t.ID] = true
-		if t.Newest != e.ID {
-			continue // its newest edit is on a newer page
 		}
 		edits, err := s.db.TaskEdits(r.Context(), u.ID, t.ID)
 		if err != nil {
@@ -570,19 +570,6 @@ func (s *Server) changesData(r *http.Request, u *store.User) (changesPage, error
 			tr.Edits = append(tr.Edits, row(te))
 		}
 		p.Rows = append(p.Rows, changeRow{Task: tr})
-	}
-	if before > 0 {
-		p.Newer = "/changes"
-	}
-	if len(es) == changesPageSize {
-		last := es[len(es)-1].ID
-		more, err := s.db.Edits(r.Context(), u.ID, last, 1)
-		if err != nil {
-			return p, err
-		}
-		if len(more) > 0 {
-			p.Older = fmt.Sprintf("/changes?before=%d", last)
-		}
 	}
 	return p, nil
 }
@@ -659,7 +646,11 @@ func (s *Server) undoTask(w http.ResponseWriter, r *http.Request, u *store.User)
 	switch {
 	case err == nil:
 		s.log.Info("task undone", "user", u.Name, "task", id, "edits", n)
-		http.Redirect(w, r, "/changes?notice=task-undone", http.StatusSeeOther)
+		back := "/changes"
+		if b := r.PostFormValue("back"); b != "" {
+			back = safeNext(b)
+		}
+		http.Redirect(w, r, withNotice(back, "task-undone"), http.StatusSeeOther)
 	case errors.Is(err, store.ErrAlreadyUndone):
 		http.Redirect(w, r, "/changes?notice=already", http.StatusSeeOther)
 	case errors.Is(err, store.ErrNotFound):

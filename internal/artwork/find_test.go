@@ -275,3 +275,61 @@ func TestMatching(t *testing.T) {
 		}
 	}
 }
+
+// Look again on an item that has a picture keeps it and offers what's
+// found, matching or not, without queueing retries.
+func TestLookAgainWithPicture(t *testing.T) {
+	ctx := context.Background()
+	e := newEnv(t)
+	img := e.fake.srv.URL + "/img/"
+	e.fake.itunes = `{"results":[
+		{"collectionName":"THE BOOK 2","artistName":"YOASOBI","artworkUrl100":"` + img + `book2/100x100bb.jpg"},
+		{"collectionName":"THE BOOK 3","artistName":"YOASOBI","artworkUrl100":"` + img + `book3/100x100bb.jpg"}]}`
+	rel := e.release("THE BOOK 3", "")
+	e.run("release", rel, 0)
+	before, _, _ := e.db.ItemArtwork(ctx, "release", rel)
+	if before == nil {
+		t.Fatal("not found the first time")
+	}
+
+	if err := e.db.LookAgain(ctx, "release", rel); err != nil {
+		t.Fatal(err)
+	}
+	if looking, _ := e.db.ArtworkLooking(ctx, "release", rel); !looking {
+		t.Fatal("not looking after Look again")
+	}
+	e.run("release", rel, 0)
+	after, pinned, _ := e.db.ItemArtwork(ctx, "release", rel)
+	if after == nil || after.ID != before.ID || pinned {
+		t.Fatalf("picture changed: %+v %v", after, pinned)
+	}
+	cs, _ := e.db.Candidates(ctx, "release", rel)
+	if len(cs) != 2 || e.state("release", rel) != "candidates" {
+		t.Fatalf("offered %+v, state %q", cs, e.state("release", rel))
+	}
+	var retries int
+	e.db.Reader().QueryRow(`SELECT count(*) FROM jobs WHERE kind = 'artwork' AND key LIKE ? AND key NOT LIKE '%:0'`, fmt.Sprintf("release:%d:%%", rel)).Scan(&retries)
+	if retries != 0 {
+		t.Errorf("%d retries queued for an item with a picture", retries)
+	}
+
+	// Nothing out there: it says so, and the picture stays.
+	e.fake.itunes = `{"results":[]}`
+	e.db.LookAgain(ctx, "release", rel)
+	e.run("release", rel, 0)
+	if e.state("release", rel) != "notfound" {
+		t.Fatalf("state %q", e.state("release", rel))
+	}
+
+	// The owner's own picture is left alone.
+	e.db.Write(ctx, func(tx *sql.Tx) error {
+		_, err := tx.Exec(`UPDATE releases SET artwork_pinned = 1 WHERE id = ?`, rel)
+		return err
+	})
+	e.db.LookAgain(ctx, "release", rel)
+	n := len(e.fake.asked)
+	e.run("release", rel, 0)
+	if len(e.fake.asked) != n {
+		t.Fatal("looked for a picture the owner chose")
+	}
+}

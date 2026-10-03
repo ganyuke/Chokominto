@@ -369,6 +369,9 @@ func (s *Server) itemEdit(kind string) func(http.ResponseWriter, *http.Request, 
 		s.log.Info("item edited", "user", u.Name, "kind", kind, "id", id, "do", r.PostFormValue("do"))
 		// The graveyard in Review sends its buttons here and goes back.
 		fragment := ""
+		if r.PostFormValue("do") == "picture-look" {
+			fragment = "#picture" // where it says what was found
+		}
 		if r.PostFormValue("back") == "review" {
 			path, fragment = "/review", "#graveyard"
 		}

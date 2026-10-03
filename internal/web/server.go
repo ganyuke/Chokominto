@@ -341,7 +341,7 @@ func (s *Server) render(w http.ResponseWriter, status int, page string, data any
 		return
 	}
 	w.WriteHeader(status)
-	fmt.Fprint(w, buf.String())
+	fmt.Fprint(w, markForms(buf.String()))
 }
 
 type errorPage struct {
@@ -432,7 +432,11 @@ func (s *Server) member(h func(http.ResponseWriter, *http.Request, *store.User))
 			}
 			return
 		}
-		h(w, withUser(r, u), u)
+		r = withUser(r, u)
+		if r.Method == http.MethodPost {
+			w = jumpBack{w, r}
+		}
+		h(w, r, u)
 	}
 }
 

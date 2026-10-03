@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"chokominto/internal/store"
@@ -57,6 +58,7 @@ type liveParts struct {
 	Playing *string      `json:"playing,omitempty"`
 	Recent  *string      `json:"recent,omitempty"`
 	History *string      `json:"history,omitempty"`
+	Picture *string      `json:"picture,omitempty"`
 	Sorting *liveSorting `json:"sorting,omitempty"`
 }
 
@@ -78,6 +80,14 @@ func (s *Server) live(w http.ResponseWriter, r *http.Request, viewer *store.User
 	}
 	var err error
 	for _, part := range strings.Split(r.URL.Query().Get("parts"), ",") {
+		// The Picture part of an Edit view names its item: picture:artist:12.
+		if kind, num, ok := strings.Cut(strings.TrimPrefix(part, "picture:"), ":"); ok && strings.HasPrefix(part, "picture:") && viewer != nil {
+			id, _ := strconv.ParseInt(num, 10, 64)
+			var p *pictureData
+			if p, err = s.loadPicture(ctx, viewer, kind, id); err == nil && p != nil {
+				out.Picture, err = render("picture-found", p)
+			}
+		}
 		switch part {
 		case "playing":
 			var p *playingBox

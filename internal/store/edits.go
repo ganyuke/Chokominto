@@ -700,6 +700,19 @@ func (db *DB) Edits(ctx context.Context, userID, beforeID int64, limit int) ([]E
 	return db.scanEdits(ctx, `WHERE e.user_id = ? AND e.id < ? AND e.automatic = 0 ORDER BY e.id DESC LIMIT ?`, userID, beforeID, limit)
 }
 
+// ChangeRows lists what Changes shows a row for, newest first, older than
+// beforeID (0 = newest): each of the user's own edits outside a task, and
+// each task once, as its newest edit. Paging by these keeps every page
+// full however many edits a task holds.
+func (db *DB) ChangeRows(ctx context.Context, userID, beforeID int64, limit int) ([]Edit, error) {
+	if beforeID <= 0 {
+		beforeID = 1<<63 - 1
+	}
+	return db.scanEdits(ctx, `WHERE e.user_id = ? AND e.id < ? AND e.automatic = 0
+		AND (e.task_id IS NULL OR e.id = (SELECT max(n.id) FROM edits n WHERE n.task_id = e.task_id AND n.automatic = 0))
+		ORDER BY e.id DESC LIMIT ?`, userID, beforeID, limit)
+}
+
 func (db *DB) scanEdits(ctx context.Context, where string, args ...any) ([]Edit, error) {
 	rows, err := db.r.QueryContext(ctx,
 		`SELECT e.id, e.kind, e.summary, e.automatic, e.undoes, e.created_at, e.undone_at, coalesce(t.label, ''), coalesce(e.task_id, 0) FROM edits e

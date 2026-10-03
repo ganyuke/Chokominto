@@ -38,8 +38,11 @@ type pictureData struct {
 	Current    string // 440 px
 	Chosen     bool   // the owner chose it
 	Candidates []candidateRow
-	Looking    bool // a lookup hasn't finished yet
-	Online     bool // looking for pictures online is on
+	Looking    bool   // a lookup is waiting or running
+	Result     string // how the last lookup ended: found, candidates, notfound, error or ""
+	Online     bool   // looking for pictures online is on
+	Path       string // the item's page
+	Live       string // its name for /live
 }
 
 type candidateRow struct {
@@ -52,7 +55,7 @@ func (s *Server) loadPicture(ctx context.Context, u *store.User, kind string, id
 	if kind != "artist" && kind != "release" {
 		return nil, nil
 	}
-	p := &pictureData{Online: u.FindArtwork}
+	p := &pictureData{Online: u.FindArtwork, Path: fmt.Sprintf("%s/%d", pagePaths[kind], id), Live: fmt.Sprintf("picture:%s:%d", kind, id)}
 	a, chosen, err := s.db.ItemArtwork(ctx, kind, id)
 	if err != nil {
 		return nil, err
@@ -67,8 +70,12 @@ func (s *Server) loadPicture(ctx context.Context, u *store.User, kind string, id
 	for _, c := range cs {
 		p.Candidates = append(p.Candidates, candidateRow{c.ID, c.Title, c.Artist})
 	}
-	state, err := s.db.Lookup(ctx, kind, id)
-	p.Looking = state == "" && a == nil && u.FindArtwork
+	if p.Result, err = s.db.Lookup(ctx, kind, id); err != nil {
+		return nil, err
+	}
+	if u.FindArtwork && !chosen {
+		p.Looking, err = s.db.ArtworkLooking(ctx, kind, id)
+	}
 	return p, err
 }
 
@@ -150,12 +157,7 @@ func (s *Server) showPicture(ctx context.Context, u *store.User, kind string, id
 
 // lookAgain forgets the candidates and looks for a picture again now.
 func (s *Server) lookAgain(ctx context.Context, kind string, id int64) error {
-	if err := s.db.ClearCandidates(ctx, kind, id); err != nil {
-		return err
-	}
-	return s.db.Write(ctx, func(tx *sql.Tx) error {
-		return store.EnqueueTx(ctx, tx, "artwork", fmt.Sprintf("%s:%d:0", kind, id), "", 0)
-	})
+	return s.db.LookAgain(ctx, kind, id)
 }
 
 // uploadPicture takes a picture from the owner's computer.

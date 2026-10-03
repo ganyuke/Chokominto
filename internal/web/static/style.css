@@ -197,6 +197,10 @@ a:hover, a:focus-visible { text-decoration: underline; }
 }
 .notice-success { border-left-color: var(--success); }
 .notice-danger { border-left-color: var(--danger); }
+/* What just happened stays in view when the page comes back to where a
+   button was used, and the place it comes back to clears it. */
+.page > .notice-success, .page > .notice-danger { position: sticky; top: 0; z-index: 1; }
+:target { scroll-margin-top: 4.5rem; }
 
 /* Buttons */
 

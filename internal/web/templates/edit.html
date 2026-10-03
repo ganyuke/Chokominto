@@ -14,7 +14,7 @@
 </form>
 <p class="help">Listens already linked stay with this {{.Noun}}.</p>
 
-<h3>All names</h3>
+<h3 id="all-names">All names</h3>
 <form id="names" method="post" action="{{.Path}}/edit"><input type="hidden" name="do" value="names"></form>
 <div class="table-scroll">
 <table class="table">
@@ -46,7 +46,7 @@
 <button type="submit">Add name</button>
 </form>
 
-<h3>Labels</h3>
+<h3 id="item-labels">Labels</h3>
 {{if .Labels}}<ul class="plain">{{range .Labels}}<li>{{.Name}} <form class="inline" method="post" action="{{$path}}/edit"><input type="hidden" name="do" value="unlabel"><input type="hidden" name="label" value="{{.ID}}"><button type="submit">Take off</button></form></li>{{end}}</ul>{{end}}
 {{if .OtherLabels}}<form class="inline-form" method="post" action="{{.Path}}/edit">
 <input type="hidden" name="do" value="label">
@@ -57,7 +57,7 @@
 {{else if not .AnyLabels}}<p>No labels yet. <a href="/settings#labels">Create them in Settings</a>.</p>{{end}}
 
 {{if eq .Kind "artist"}}
-<h3>Type</h3>
+<h3 id="type">Type</h3>
 <form class="inline-form" method="post" action="{{.Path}}/edit">
 <input type="hidden" name="do" value="kind">
 <label class="visually-hidden" for="artist-kind">Type</label>
@@ -69,7 +69,7 @@
 <button type="submit">Save</button>
 </form>
 
-<h3>Also counts for</h3>
+<h3 id="also-counts-for">Also counts for</h3>
 <p class="help">Listens of this artist also count for these, like a character for their voice actor.</p>
 {{if .CountsFor}}<ul class="plain">{{range .CountsFor}}<li><a href="/artist/{{.ID}}">{{.Name}}</a>{{with .Note}} <span class="muted">({{.}})</span>{{end}} <form class="inline" method="post" action="{{$path}}/edit"><input type="hidden" name="do" value="remove-counts-for"><input type="hidden" name="artist" value="{{.ID}}"><button type="submit">Remove</button></form></li>{{end}}</ul>{{end}}
 <form class="inline-form" method="post" action="{{.Path}}/edit">
@@ -81,7 +81,7 @@
 <button type="submit">Add</button>
 </form>
 
-<h3>Members</h3>
+<h3 id="members">Members</h3>
 {{if .Members}}<ul class="plain">{{range .Members}}<li><a href="/artist/{{.ID}}">{{.Name}}</a> <form class="inline" method="post" action="{{$path}}/edit"><input type="hidden" name="do" value="remove-member"><input type="hidden" name="artist" value="{{.ID}}"><button type="submit">Remove</button></form></li>{{end}}</ul>{{end}}
 <form class="inline-form" method="post" action="{{.Path}}/edit">
 <input type="hidden" name="do" value="member">
@@ -92,7 +92,7 @@
 {{end}}
 
 {{if eq .Kind "song"}}
-{{if gt (len .Recordings) 1}}<h3>Recordings</h3>
+{{if gt (len .Recordings) 1}}<h3 id="recordings">Recordings</h3>
 <form id="split" method="post" action="{{.Path}}/edit"><input type="hidden" name="do" value="split"></form>
 <div class="table-scroll">
 <table class="table">
@@ -112,7 +112,7 @@
 <button type="submit" form="split">Split checked into a new song</button>
 <p class="help">For two songs that only share a name. The new song gets the same name, and you can rename it after.</p>
 <p class="help">In Top songs with Combine versions ticked, a recording with its own row is ranked apart from the song, like an instrumental.</p>
-{{else}}{{with index .Recordings 0}}<h3>Version</h3>
+{{else}}{{with index .Recordings 0}}<h3 id="version">Version</h3>
 {{template "version-form" (versionForm $path .)}}{{end}}{{end}}
 
 <h3 id="credits">Credited artists</h3>
@@ -134,7 +134,7 @@
 {{end}}
 
 {{if eq .Kind "release"}}
-<h3>Details</h3>
+<h3 id="details">Details</h3>
 <form class="form" method="post" action="{{.Path}}/edit">
 <input type="hidden" name="do" value="details">
 <div class="field"><label for="album-kind">Type</label>
@@ -179,7 +179,7 @@
 {{end}}
 
 {{if .Credits}}
-<h3>Who gets credit</h3>
+<h3 id="who-gets-credit">Who gets credit</h3>
 <p class="help">Here, listens credited to one artist count for another instead of its members or the artists it counts for. For example a group credit on a solo song, or a character voiced by someone else on this {{.Noun}}.</p>
 {{if .Overrides}}<ul class="plain">{{range .Overrides}}<li>{{with .On}}On the recording by {{.}}: {{end}}<a href="/artist/{{.From.ID}}">{{.From.Name}}</a> counts for <a href="/artist/{{.To.ID}}">{{.To.Name}}</a> <form class="inline" method="post" action="{{$path}}/edit"><input type="hidden" name="do" value="remove-override"><input type="hidden" name="scope" value="{{.ScopeID}}"><input type="hidden" name="from" value="{{.From.ID}}"><input type="hidden" name="to" value="{{.To.ID}}"><button type="submit">Remove</button></form></li>{{end}}</ul>{{end}}
 <form class="inline-form" method="post" action="{{.Path}}/edit">
@@ -195,23 +195,15 @@
 
 {{with .Picture}}
 <h3 id="picture">Picture</h3>
-{{if .Current}}<p><img class="cover" src="{{.Current}}" alt="" width="220" height="220"></p>
-{{if .Chosen}}<p class="help">You chose this one, so it stays.</p>{{end}}
-{{else if .Looking}}<p>Looking for one. It shows here when it's found.</p>
-{{else}}<p>No picture yet.</p>{{end}}
-{{if .Candidates}}
-<p class="help">Pictures that might fit. Pick one to use it.</p>
-<ul class="candidates">{{range .Candidates}}<li><img src="/art/candidate/{{.ID}}" alt="" width="110" height="110" loading="lazy"><span>{{.Title}}{{with .Artist}} <span class="muted">{{.}}</span>{{end}}</span><form method="post" action="{{$path}}/edit"><input type="hidden" name="do" value="picture-choose"><input type="hidden" name="candidate" value="{{.ID}}"><button type="submit">Use this</button></form></li>{{end}}</ul>
-{{end}}
-<form class="inline-form" method="post" action="{{$path}}/picture" enctype="multipart/form-data">
+<div data-live="{{.Live}}" aria-live="polite">{{template "picture-found" .}}</div>
+<form class="inline-form" method="post" action="{{.Path}}/picture" enctype="multipart/form-data">
 <label class="visually-hidden" for="picture-file">Picture file</label>
 <input type="file" id="picture-file" name="picture" accept="image/jpeg,image/png,image/webp,image/gif" required>
 <button type="submit">Upload</button>
 </form>
-{{if and .Online (not .Chosen)}}<form method="post" action="{{$path}}/edit"><input type="hidden" name="do" value="picture-look"><button type="submit">Look again</button></form>{{end}}
 {{end}}
 
-<h3>Names from MusicBrainz</h3>
+<h3 id="musicbrainz">Names from MusicBrainz</h3>
 <p><a class="button" href="{{.Path}}/musicbrainz">Get names from MusicBrainz</a></p>
 <p class="help">Adds its English, romaji and Japanese names{{if eq .Kind "artist"}}, and offers its members{{end}}. You see them before anything is added.</p>
 
